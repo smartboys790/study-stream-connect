@@ -1,7 +1,6 @@
 
 import { Button } from "@/components/ui/button";
 import { useRoom } from "@/contexts/RoomContext";
-import { useNavigate } from "react-router-dom";
 import {
   Mic,
   MicOff,
@@ -12,7 +11,11 @@ import {
   VideoOff,
 } from "lucide-react";
 
-const RoomControls = () => {
+interface RoomControlsProps {
+  onLeaveRoom?: () => void;
+}
+
+const RoomControls = ({ onLeaveRoom }: RoomControlsProps) => {
   const {
     isAudioMuted,
     isVideoOff,
@@ -22,11 +25,13 @@ const RoomControls = () => {
     toggleScreenShare,
     leaveRoom,
   } = useRoom();
-  const navigate = useNavigate();
 
   const handleLeaveRoom = () => {
-    leaveRoom();
-    navigate("/dashboard");
+    if (onLeaveRoom) {
+      onLeaveRoom();
+    } else {
+      leaveRoom();
+    }
   };
 
   return (

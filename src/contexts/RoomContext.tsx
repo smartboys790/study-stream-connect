@@ -105,12 +105,16 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
 
   const initLocalStream = async () => {
     try {
+      // Try to get user media with both video and audio
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
         video: true
       });
+      
       localStreamRef.current = stream;
       setLocalStream(stream);
+      setIsAudioMuted(false);
+      setIsVideoOff(false);
       
       // Initial participant is the local user
       if (user) {
@@ -128,10 +132,60 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       }
       
       return stream;
-    } catch (error) {
-      console.error("Error accessing media devices:", error);
-      toast.error("Failed to access camera or microphone. Please check permissions.");
-      throw error;
+    } catch (err) {
+      console.error("Error accessing media devices:", err);
+      
+      try {
+        // If we can't get both, try just audio
+        const audioOnlyStream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: false
+        });
+        
+        localStreamRef.current = audioOnlyStream;
+        setLocalStream(audioOnlyStream);
+        setIsAudioMuted(false);
+        setIsVideoOff(true); // Video is off since we don't have it
+        
+        // Initial participant is the local user with audio only
+        if (user) {
+          setParticipants([
+            {
+              id: user.id,
+              name: user.name,
+              avatar: user.avatar,
+              stream: audioOnlyStream,
+              isMuted: false,
+              isVideoOff: true,
+              isScreenSharing: false
+            }
+          ]);
+        }
+        
+        toast.info("Video camera not available. Using audio only.");
+        return audioOnlyStream;
+      } catch (audioErr) {
+        console.error("Error accessing audio devices:", audioErr);
+        
+        // If we can't get any media, join without media but set participant
+        if (user) {
+          setParticipants([
+            {
+              id: user.id,
+              name: user.name,
+              avatar: user.avatar,
+              isMuted: true,
+              isVideoOff: true,
+              isScreenSharing: false
+            }
+          ]);
+        }
+        
+        setIsAudioMuted(true);
+        setIsVideoOff(true);
+        toast.warning("Could not access camera or microphone. You can still chat with others.");
+        return null;
+      }
     }
   };
 
@@ -145,7 +199,7 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
     try {
       setIsJoining(true);
       
-      // Initialize local media stream
+      // Initialize local media stream - now handles fallbacks for no media devices
       await initLocalStream();
       
       // In a real app, we would make an API call to join a room
@@ -173,10 +227,15 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       ];
       
       // In a real app, we would establish WebRTC connections with other participants
-      setParticipants(prev => [
-        ...prev, 
-        ...mockParticipants
-      ]);
+      setParticipants(prev => {
+        // Filter out any duplicates (in case user is already in the list)
+        const existingUserIds = prev.map(p => p.id);
+        const filteredMockParticipants = mockParticipants.filter(
+          p => !existingUserIds.includes(p.id)
+        );
+        
+        return [...prev, ...filteredMockParticipants];
+      });
       
       // Add some mock chat messages
       setChatMessages([
@@ -241,10 +300,17 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
   };
 
   const toggleAudio = () => {
-    if (!localStream) return;
+    if (!localStream) {
+      // If no stream, can't toggle audio
+      toast.error("No audio available");
+      return;
+    }
     
     const audioTracks = localStream.getAudioTracks();
-    if (audioTracks.length === 0) return;
+    if (audioTracks.length === 0) {
+      toast.error("No audio device available");
+      return;
+    }
     
     const newMuteState = !isAudioMuted;
     audioTracks.forEach(track => {
@@ -261,13 +327,22 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         )
       );
     }
+    
+    toast.info(newMuteState ? "Microphone muted" : "Microphone unmuted");
   };
 
   const toggleVideo = () => {
-    if (!localStream) return;
+    if (!localStream) {
+      // If no stream, can't toggle video
+      toast.error("No video available");
+      return;
+    }
     
     const videoTracks = localStream.getVideoTracks();
-    if (videoTracks.length === 0) return;
+    if (videoTracks.length === 0) {
+      toast.error("No video device available");
+      return;
+    }
     
     const newVideoOffState = !isVideoOff;
     videoTracks.forEach(track => {
@@ -284,6 +359,8 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         )
       );
     }
+    
+    toast.info(newVideoOffState ? "Camera turned off" : "Camera turned on");
   };
 
   const toggleScreenShare = async () => {
@@ -310,37 +387,48 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
             p.id === user.id ? { ...p, isScreenSharing: false } : p
           )
         );
+        
+        toast.info("Screen sharing stopped");
       } else {
         // Start screen sharing
-        const screenStream = await navigator.mediaDevices.getDisplayMedia({
-          video: true
-        });
-        
-        screenShareStreamRef.current = screenStream;
-        setLocalStream(screenStream);
-        setIsScreenSharing(true);
-        
-        // Handle when user stops sharing via browser UI
-        screenStream.getVideoTracks()[0].onended = () => {
-          if (localStreamRef.current) {
-            setLocalStream(localStreamRef.current);
-          }
-          setIsScreenSharing(false);
+        try {
+          const screenStream = await navigator.mediaDevices.getDisplayMedia({
+            video: true
+          });
+          
+          screenShareStreamRef.current = screenStream;
+          setLocalStream(screenStream);
+          setIsScreenSharing(true);
+          
+          // Handle when user stops sharing via browser UI
+          screenStream.getVideoTracks()[0].onended = () => {
+            if (localStreamRef.current) {
+              setLocalStream(localStreamRef.current);
+            }
+            setIsScreenSharing(false);
+            
+            // Update participant list
+            setParticipants(prev => 
+              prev.map(p => 
+                p.id === user.id ? { ...p, isScreenSharing: false } : p
+              )
+            );
+            
+            toast.info("Screen sharing stopped");
+          };
           
           // Update participant list
           setParticipants(prev => 
             prev.map(p => 
-              p.id === user.id ? { ...p, isScreenSharing: false } : p
+              p.id === user.id ? { ...p, isScreenSharing: true } : p
             )
           );
-        };
-        
-        // Update participant list
-        setParticipants(prev => 
-          prev.map(p => 
-            p.id === user.id ? { ...p, isScreenSharing: true } : p
-          )
-        );
+          
+          toast.success("Screen sharing started");
+        } catch (err) {
+          console.error("Error starting screen share:", err);
+          toast.error("Failed to share screen. You may have denied permission.");
+        }
       }
     } catch (error) {
       console.error("Error toggling screen share:", error);

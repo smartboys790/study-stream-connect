@@ -8,10 +8,18 @@ const VideoGrid = () => {
   const { participants } = useRoom();
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4 w-full">
-      {participants.map((participant) => (
-        <VideoTile key={participant.id} participant={participant} />
-      ))}
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4 w-full h-full">
+      {participants.length === 0 ? (
+        <div className="col-span-full flex items-center justify-center h-full">
+          <div className="text-center p-6">
+            <p className="text-lg text-muted-foreground">No participants yet</p>
+          </div>
+        </div>
+      ) : (
+        participants.map((participant) => (
+          <VideoTile key={participant.id} participant={participant} />
+        ))
+      )}
     </div>
   );
 };
@@ -45,9 +53,13 @@ const VideoTile = ({ participant }: VideoTileProps) => {
       .toUpperCase();
   };
 
+  const hasVideoStream = participant.stream && 
+    participant.stream.getVideoTracks().length > 0 && 
+    !participant.isVideoOff;
+
   return (
     <div className="relative aspect-video rounded-lg overflow-hidden border border-border bg-card shadow-sm flex items-center justify-center">
-      {participant.stream && !participant.isVideoOff ? (
+      {hasVideoStream ? (
         <video
           ref={videoRef}
           autoPlay

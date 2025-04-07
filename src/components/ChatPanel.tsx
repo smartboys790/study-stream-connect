@@ -12,6 +12,7 @@ const ChatPanel = () => {
   const { user } = useAuth();
   const [message, setMessage] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Auto-scroll to the bottom when new messages arrive
   useEffect(() => {
@@ -23,6 +24,8 @@ const ChatPanel = () => {
     if (message.trim() && user) {
       sendChatMessage(message.trim());
       setMessage("");
+      // Focus back on the input field after sending
+      inputRef.current?.focus();
     }
   };
 
@@ -84,11 +87,20 @@ const ChatPanel = () => {
         className="p-3 border-t border-border flex gap-2"
       >
         <input
+          ref={inputRef}
           type="text"
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           placeholder="Type a message..."
           className="flex-1 bg-background text-foreground rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              if (message.trim()) {
+                handleSendMessage(e);
+              }
+            }
+          }}
         />
         <Button
           type="submit"

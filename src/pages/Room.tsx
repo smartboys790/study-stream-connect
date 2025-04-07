@@ -1,5 +1,5 @@
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useRoom } from "@/contexts/RoomContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -15,6 +15,7 @@ const Room = () => {
   const { user, isAuthenticated } = useAuth();
   const { joinRoom, leaveRoom, participants, isJoining } = useRoom();
   const navigate = useNavigate();
+  const [hasJoined, setHasJoined] = useState(false);
 
   useEffect(() => {
     // Check if user is authenticated
@@ -23,16 +24,25 @@ const Room = () => {
       return;
     }
 
-    // Join the room when component mounts
-    if (roomId) {
+    // Only join the room if we haven't already joined
+    if (roomId && !hasJoined) {
+      setHasJoined(true);
       joinRoom(roomId);
     }
 
-    // Leave the room when component unmounts
+    // Only clean up when component is unmounting completely
     return () => {
-      leaveRoom();
+      // We don't automatically leave the room here anymore
+      // This prevents the room from being left when the component
+      // re-renders due to state changes
     };
-  }, [roomId, isAuthenticated, joinRoom, leaveRoom, navigate]);
+  }, [roomId, isAuthenticated, joinRoom, navigate, hasJoined]);
+
+  // Handle manual leaving
+  const handleLeaveRoom = () => {
+    leaveRoom();
+    navigate("/dashboard");
+  };
 
   if (!roomId) {
     return (
@@ -102,7 +112,7 @@ const Room = () => {
           <div className="flex-1 bg-card rounded-lg border border-border overflow-hidden">
             <VideoGrid />
           </div>
-          <RoomControls />
+          <RoomControls onLeaveRoom={handleLeaveRoom} />
         </div>
         
         <div className="md:w-80 h-80 md:h-auto">
