@@ -118,17 +118,36 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       
       // Initial participant is the local user
       if (user) {
-        setParticipants([
-          {
-            id: user.id,
-            name: user.name,
-            avatar: user.avatar,
-            stream,
-            isMuted: false,
-            isVideoOff: false,
-            isScreenSharing: false
+        setParticipants(prev => {
+          // Check if user is already in participants list
+          const isExisting = prev.some(p => p.id === user.id);
+          if (isExisting) {
+            return prev.map(p => 
+              p.id === user.id 
+                ? { 
+                    ...p, 
+                    stream, 
+                    isMuted: false, 
+                    isVideoOff: false, 
+                    isScreenSharing: false 
+                  } 
+                : p
+            );
+          } else {
+            return [
+              ...prev,
+              {
+                id: user.id,
+                name: user.name,
+                avatar: user.avatar,
+                stream,
+                isMuted: false,
+                isVideoOff: false,
+                isScreenSharing: false
+              }
+            ];
           }
-        ]);
+        });
       }
       
       return stream;
@@ -149,17 +168,36 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         
         // Initial participant is the local user with audio only
         if (user) {
-          setParticipants([
-            {
-              id: user.id,
-              name: user.name,
-              avatar: user.avatar,
-              stream: audioOnlyStream,
-              isMuted: false,
-              isVideoOff: true,
-              isScreenSharing: false
+          setParticipants(prev => {
+            // Check if user is already in participants list
+            const isExisting = prev.some(p => p.id === user.id);
+            if (isExisting) {
+              return prev.map(p => 
+                p.id === user.id 
+                  ? { 
+                      ...p, 
+                      stream: audioOnlyStream, 
+                      isMuted: false, 
+                      isVideoOff: true, 
+                      isScreenSharing: false 
+                    } 
+                  : p
+              );
+            } else {
+              return [
+                ...prev,
+                {
+                  id: user.id,
+                  name: user.name,
+                  avatar: user.avatar,
+                  stream: audioOnlyStream,
+                  isMuted: false,
+                  isVideoOff: true,
+                  isScreenSharing: false
+                }
+              ];
             }
-          ]);
+          });
         }
         
         toast.info("Video camera not available. Using audio only.");
@@ -169,16 +207,34 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         
         // If we can't get any media, join without media but set participant
         if (user) {
-          setParticipants([
-            {
-              id: user.id,
-              name: user.name,
-              avatar: user.avatar,
-              isMuted: true,
-              isVideoOff: true,
-              isScreenSharing: false
+          setParticipants(prev => {
+            // Check if user is already in participants list
+            const isExisting = prev.some(p => p.id === user.id);
+            if (isExisting) {
+              return prev.map(p => 
+                p.id === user.id 
+                  ? { 
+                      ...p, 
+                      isMuted: true, 
+                      isVideoOff: true, 
+                      isScreenSharing: false 
+                    } 
+                  : p
+              );
+            } else {
+              return [
+                ...prev,
+                {
+                  id: user.id,
+                  name: user.name,
+                  avatar: user.avatar,
+                  isMuted: true,
+                  isVideoOff: true,
+                  isScreenSharing: false
+                }
+              ];
             }
-          ]);
+          });
         }
         
         setIsAudioMuted(true);
@@ -206,7 +262,8 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       // For demo, we'll just set the room ID and add some mock participants
       setRoomId(id);
       
-      // Add mock participants for demo
+      // Add mock participants for demo - in a real app, these would come from the server
+      // For synchronization, we'd get a list of current participants from the backend
       const mockParticipants = [
         {
           id: "user-1",
@@ -222,6 +279,14 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
           avatar: "https://avatar.vercel.sh/sam@example.com?size=128",
           isMuted: true,
           isVideoOff: false,
+          isScreenSharing: false
+        },
+        {
+          id: "user-3",
+          name: "Jordan Lee",
+          avatar: "https://avatar.vercel.sh/jordan@example.com?size=128",
+          isMuted: false,
+          isVideoOff: true,
           isScreenSharing: false
         }
       ];
@@ -252,6 +317,13 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
           senderName: "Sam Taylor",
           text: "Yes, let's focus on chapter 5 today.",
           timestamp: new Date(Date.now() - 1000 * 60 * 4) // 4 minutes ago
+        },
+        {
+          id: "msg-3",
+          senderId: "user-3",
+          senderName: "Jordan Lee",
+          text: "I'm having trouble with the complex numbers section. Can we go over that?",
+          timestamp: new Date(Date.now() - 1000 * 60 * 2) // 2 minutes ago
         }
       ]);
       
@@ -283,6 +355,8 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
     setParticipants([]);
     setChatMessages([]);
     toast.info("You have left the room");
+    
+    // In a real app, we would notify other participants that this user has left
   };
 
   const sendChatMessage = (text: string) => {
@@ -297,6 +371,44 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
     };
     
     setChatMessages(prev => [...prev, newMessage]);
+    
+    // In a real app, we would broadcast this message to other participants
+    // Add a simulated response for demo purposes
+    const mockResponders = [
+      { id: "user-1", name: "Alex Johnson" },
+      { id: "user-2", name: "Sam Taylor" },
+      { id: "user-3", name: "Jordan Lee" }
+    ];
+    
+    // 30% chance of getting a mock response
+    if (Math.random() < 0.3) {
+      const responder = mockResponders[Math.floor(Math.random() * mockResponders.length)];
+      const mockResponses = [
+        "Good point!",
+        "I agree with that.",
+        "Can you explain more?",
+        "I'm not sure I understand, can you elaborate?",
+        "That makes sense!",
+        "Let's move on to the next topic.",
+        "Does anyone need help with this section?",
+        "Should we take a 5-minute break soon?"
+      ];
+      
+      const response = mockResponses[Math.floor(Math.random() * mockResponses.length)];
+      
+      // Add mock response after a short delay
+      setTimeout(() => {
+        const mockMessage: ChatMessage = {
+          id: `msg-${Math.random().toString(36).substring(2, 9)}`,
+          senderId: responder.id,
+          senderName: responder.name,
+          text: response,
+          timestamp: new Date()
+        };
+        
+        setChatMessages(prev => [...prev, mockMessage]);
+      }, 1500 + Math.random() * 2000); // Random delay between 1.5-3.5 seconds
+    }
   };
 
   const toggleAudio = () => {
@@ -329,6 +441,8 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
     }
     
     toast.info(newMuteState ? "Microphone muted" : "Microphone unmuted");
+    
+    // In a real app, we would notify other participants about the mute status change
   };
 
   const toggleVideo = () => {
@@ -361,6 +475,8 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
     }
     
     toast.info(newVideoOffState ? "Camera turned off" : "Camera turned on");
+    
+    // In a real app, we would notify other participants about the video status change
   };
 
   const toggleScreenShare = async () => {
@@ -389,6 +505,8 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         );
         
         toast.info("Screen sharing stopped");
+        
+        // In a real app, we would notify other participants that screen sharing has stopped
       } else {
         // Start screen sharing
         try {
@@ -415,6 +533,8 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
             );
             
             toast.info("Screen sharing stopped");
+            
+            // In a real app, we would notify other participants that screen sharing has stopped
           };
           
           // Update participant list
@@ -425,6 +545,9 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
           );
           
           toast.success("Screen sharing started");
+          
+          // In a real app, we would notify other participants that screen sharing has started
+          // and send them the screen sharing stream
         } catch (err) {
           console.error("Error starting screen share:", err);
           toast.error("Failed to share screen. You may have denied permission.");

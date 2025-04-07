@@ -7,12 +7,23 @@ import { Mic, MicOff, Monitor, Video, VideoOff } from "lucide-react";
 const VideoGrid = () => {
   const { participants } = useRoom();
 
+  // Determine the grid layout based on number of participants
+  const getGridClass = () => {
+    const count = participants.length;
+    if (count === 0) return "grid-cols-1";
+    if (count === 1) return "grid-cols-1";
+    if (count === 2) return "grid-cols-1 md:grid-cols-2";
+    if (count === 3 || count === 4) return "grid-cols-1 md:grid-cols-2";
+    return "grid-cols-1 md:grid-cols-2 lg:grid-cols-3";
+  };
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4 w-full h-full">
+    <div className={`grid ${getGridClass()} gap-4 p-4 w-full h-full`}>
       {participants.length === 0 ? (
         <div className="col-span-full flex items-center justify-center h-full">
           <div className="text-center p-6">
             <p className="text-lg text-muted-foreground">No participants yet</p>
+            <p className="text-sm text-muted-foreground">Waiting for others to join...</p>
           </div>
         </div>
       ) : (
