@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useRoom } from "@/contexts/RoomContext";
@@ -19,22 +20,18 @@ const Room = () => {
   const [hasJoined, setHasJoined] = useState(false);
   const [roomName, setRoomName] = useState<string>("");
   const [roomError, setRoomError] = useState<string>("");
+  const [isPublicRoom, setIsPublicRoom] = useState(false);
+  const [isAuthorized, setIsAuthorized] = useState(false);
 
   useEffect(() => {
-    // Check if user is authenticated
-    if (!isAuthenticated) {
-      navigate("/login");
-      return;
-    }
+    if (!roomId) return;
 
-    const loadRoomData = async () => {
-      if (!roomId) return;
-
+    const checkRoomAccess = async () => {
       try {
-        // Check if the room exists in the database
+        // Check if the room exists and if it's public
         const { data: roomData, error: roomError } = await supabase
           .from('rooms')
-          .select('name')
+          .select('name, is_public')
           .eq('id', roomId)
           .single();
 
@@ -45,8 +42,19 @@ const Room = () => {
         }
 
         setRoomName(roomData.name);
+        setIsPublicRoom(roomData.is_public);
 
-        // Register user as participant in the room
+        // Determine if user is authorized to access this room
+        if (roomData.is_public) {
+          setIsAuthorized(true);
+        } else if (isAuthenticated) {
+          setIsAuthorized(true);
+        } else {
+          setRoomError("This room requires authentication");
+          return;
+        }
+
+        // Register user as participant if authenticated
         if (user) {
           const { error: participantError } = await supabase
             .from('room_participants')
@@ -60,26 +68,25 @@ const Room = () => {
 
           if (participantError) {
             console.error("Error joining room:", participantError);
-            toast.error("Failed to join room");
-            return;
-          }
-
-          // Only join the room if we haven't already joined
-          if (!hasJoined) {
-            setHasJoined(true);
-            joinRoom(roomId);
+            toast.error("Failed to join room as participant");
           }
         }
+
+        // Join the WebRTC room
+        if (!hasJoined && isAuthorized) {
+          setHasJoined(true);
+          joinRoom(roomId);
+        }
       } catch (err) {
-        console.error("Error loading room:", err);
-        setRoomError("Error loading room");
+        console.error("Error checking room access:", err);
+        setRoomError("Error checking room access");
       }
     };
 
-    loadRoomData();
+    checkRoomAccess();
 
     return () => {
-      // This cleanup function will only run when the component is unmounting
+      // Cleanup when unmounting
       if (hasJoined && roomId && user) {
         // Update the participant's active status to false
         supabase
@@ -92,7 +99,7 @@ const Room = () => {
           });
       }
     };
-  }, [roomId, isAuthenticated, user, hasJoined, joinRoom, navigate]);
+  }, [roomId, isAuthenticated, user, hasJoined, joinRoom, isAuthorized]);
 
   // Set up real-time subscription to room participants
   useEffect(() => {
@@ -108,8 +115,6 @@ const Room = () => {
         filter: `room_id=eq.${roomId}`
       }, (payload) => {
         console.log('Participants change:', payload);
-        // The RoomContext will handle participant management
-        // This is just for logging and future enhancement
       })
       .subscribe();
 
@@ -151,6 +156,17 @@ const Room = () => {
             <p className="text-muted-foreground mb-6">
               {roomError}
             </p>
+            {!isAuthenticated && !isPublicRoom && (
+              <div className="mb-4">
+                <p className="mb-2">This room requires authentication.</p>
+                <Button onClick={() => navigate("/login")} className="mr-2">
+                  Login
+                </Button>
+                <Button variant="outline" onClick={() => navigate("/signup")}>
+                  Sign Up
+                </Button>
+              </div>
+            )}
             <Button onClick={() => navigate("/dashboard")}>
               Return to Dashboard
             </Button>
@@ -179,7 +195,7 @@ const Room = () => {
     );
   }
 
-  if (isJoining) {
+  if (isJoining || !isAuthorized) {
     return (
       <div className="min-h-screen flex flex-col">
         <Header />
@@ -217,6 +233,7 @@ const Room = () => {
                 <span>Room ID:</span>
                 <span className="font-medium">{roomId}</span>
                 <span className="text-xs">({participants.length} participants)</span>
+                {isPublicRoom && <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full ml-2">Public</span>}
               </div>
             </div>
           </div>

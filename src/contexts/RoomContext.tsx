@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -137,7 +136,7 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       }
 
       const roomParticipants = data
-        .filter(p => p.user_id !== user?.id)
+        .filter(p => !user || p.user_id !== user.id)
         .map(p => {
           const userId = p.user_id;
           const email = `user-${userId.substring(0, 8)}@example.com`;
@@ -177,37 +176,40 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       setIsAudioMuted(false);
       setIsVideoOff(false);
       
-      if (user) {
-        setParticipants(prev => {
-          const isExisting = prev.some(p => p.id === user.id);
-          if (isExisting) {
-            return prev.map(p => 
-              p.id === user.id 
-                ? { 
-                    ...p, 
-                    stream, 
-                    isMuted: false, 
-                    isVideoOff: false, 
-                    isScreenSharing: false 
-                  } 
-                : p
-            );
-          } else {
-            return [
-              ...prev,
-              {
-                id: user.id,
-                name: user.name,
-                avatar: user.avatar,
-                stream,
-                isMuted: false,
-                isVideoOff: false,
-                isScreenSharing: false
-              }
-            ];
-          }
-        });
-      }
+      // Generate a unique guest ID if no user is logged in
+      const participantId = user ? user.id : `guest-${Math.random().toString(36).substring(2, 9)}`;
+      const participantName = user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`;
+      const participantAvatar = user ? user.avatar : `https://avatar.vercel.sh/guest-${participantId}?size=128`;
+      
+      setParticipants(prev => {
+        const isExisting = prev.some(p => p.id === participantId);
+        if (isExisting) {
+          return prev.map(p => 
+            p.id === participantId 
+              ? { 
+                  ...p, 
+                  stream, 
+                  isMuted: false, 
+                  isVideoOff: false, 
+                  isScreenSharing: false 
+                } 
+              : p
+          );
+        } else {
+          return [
+            ...prev,
+            {
+              id: participantId,
+              name: participantName,
+              avatar: participantAvatar,
+              stream,
+              isMuted: false,
+              isVideoOff: false,
+              isScreenSharing: false
+            }
+          ];
+        }
+      });
       
       return stream;
     } catch (err) {
@@ -224,72 +226,78 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         setIsAudioMuted(false);
         setIsVideoOff(true);
         
-        if (user) {
-          setParticipants(prev => {
-            const isExisting = prev.some(p => p.id === user.id);
-            if (isExisting) {
-              return prev.map(p => 
-                p.id === user.id 
-                  ? { 
-                      ...p, 
-                      stream: audioOnlyStream, 
-                      isMuted: false, 
-                      isVideoOff: true, 
-                      isScreenSharing: false 
-                    } 
-                  : p
-              );
-            } else {
-              return [
-                ...prev,
-                {
-                  id: user.id,
-                  name: user.name,
-                  avatar: user.avatar,
-                  stream: audioOnlyStream,
-                  isMuted: false,
-                  isVideoOff: true,
-                  isScreenSharing: false
-                }
-              ];
-            }
-          });
-        }
+        // Generate a unique guest ID if no user is logged in
+        const participantId = user ? user.id : `guest-${Math.random().toString(36).substring(2, 9)}`;
+        const participantName = user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`;
+        const participantAvatar = user ? user.avatar : `https://avatar.vercel.sh/guest-${participantId}?size=128`;
+        
+        setParticipants(prev => {
+          const isExisting = prev.some(p => p.id === participantId);
+          if (isExisting) {
+            return prev.map(p => 
+              p.id === participantId 
+                ? { 
+                    ...p, 
+                    stream: audioOnlyStream, 
+                    isMuted: false, 
+                    isVideoOff: true, 
+                    isScreenSharing: false 
+                  } 
+                : p
+            );
+          } else {
+            return [
+              ...prev,
+              {
+                id: participantId,
+                name: participantName,
+                avatar: participantAvatar,
+                stream: audioOnlyStream,
+                isMuted: false,
+                isVideoOff: true,
+                isScreenSharing: false
+              }
+            ];
+          }
+        });
         
         toast.info("Video camera not available. Using audio only.");
         return audioOnlyStream;
       } catch (audioErr) {
         console.error("Error accessing audio devices:", audioErr);
         
-        if (user) {
-          setParticipants(prev => {
-            const isExisting = prev.some(p => p.id === user.id);
-            if (isExisting) {
-              return prev.map(p => 
-                p.id === user.id 
-                  ? { 
-                      ...p, 
-                      isMuted: true, 
-                      isVideoOff: true, 
-                      isScreenSharing: false 
-                    } 
-                  : p
-              );
-            } else {
-              return [
-                ...prev,
-                {
-                  id: user.id,
-                  name: user.name,
-                  avatar: user.avatar,
-                  isMuted: true,
-                  isVideoOff: true,
-                  isScreenSharing: false
-                }
-              ];
-            }
-          });
-        }
+        // Generate a unique guest ID if no user is logged in
+        const participantId = user ? user.id : `guest-${Math.random().toString(36).substring(2, 9)}`;
+        const participantName = user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`;
+        const participantAvatar = user ? user.avatar : `https://avatar.vercel.sh/guest-${participantId}?size=128`;
+        
+        setParticipants(prev => {
+          const isExisting = prev.some(p => p.id === participantId);
+          if (isExisting) {
+            return prev.map(p => 
+              p.id === participantId 
+                ? { 
+                    ...p, 
+                    isMuted: true, 
+                    isVideoOff: true, 
+                    isScreenSharing: false 
+                  } 
+                : p
+            );
+          } else {
+            return [
+              ...prev,
+              {
+                id: participantId,
+                name: participantName,
+                avatar: participantAvatar,
+                isMuted: true,
+                isVideoOff: true,
+                isScreenSharing: false
+              }
+            ];
+          }
+        });
         
         setIsAudioMuted(true);
         setIsVideoOff(true);
@@ -300,22 +308,23 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
   };
 
   const initializePeer = () => {
-    if (!user || !roomId) return null;
+    if (!roomId) return null;
     
     try {
-      const peerId = `${roomId}-${user.id}`;
+      // Generate a unique peer ID - use user ID if logged in, otherwise create a guest ID
+      const userId = user ? user.id : `guest-${Math.random().toString(36).substring(2, 9)}`;
+      const peerId = `${roomId}-${userId}`;
       const peer = new Peer(peerId);
       
       peer.on('open', (id) => {
         console.log('My peer ID is: ' + id);
         // Update my participant entry with peerId
-        if (user) {
-          setParticipants(prev => 
-            prev.map(p => 
-              p.id === user.id ? { ...p, peerId: id } : p
-            )
-          );
-        }
+        const currentId = user ? user.id : userId;
+        setParticipants(prev => 
+          prev.map(p => 
+            p.id === currentId ? { ...p, peerId: id } : p
+          )
+        );
       });
       
       peer.on('call', (call) => {
@@ -525,12 +534,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
   };
 
   const joinRoom = async (id: string) => {
-    if (!user) {
-      toast.error("You must be logged in to join a room");
-      navigate("/login");
-      return;
-    }
-
     try {
       setIsJoining(true);
       

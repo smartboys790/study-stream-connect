@@ -46,19 +46,25 @@ export type Database = {
           created_at: string
           created_by: string | null
           id: string
+          is_public: boolean
           name: string
+          scheduled_time: string | null
         }
         Insert: {
           created_at?: string
           created_by?: string | null
           id?: string
+          is_public?: boolean
           name: string
+          scheduled_time?: string | null
         }
         Update: {
           created_at?: string
           created_by?: string | null
           id?: string
+          is_public?: boolean
           name?: string
+          scheduled_time?: string | null
         }
         Relationships: []
       }
