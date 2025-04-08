@@ -111,11 +111,7 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         .from('room_participants')
         .select(`
           id,
-          user_id,
-          auth.users!inner (
-            id,
-            email
-          )
+          user_id
         `)
         .eq('room_id', roomId)
         .eq('is_active', true);
@@ -128,12 +124,12 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       const roomParticipants = data
         .filter(p => p.user_id !== user?.id)
         .map(p => {
-          const userData = p.auth?.users || {};
-          const email = userData.email || "Unknown User";
+          const userId = p.user_id;
+          const email = `user-${userId.substring(0, 8)}@example.com`;
           const name = email.split('@')[0];
           
           return {
-            id: p.user_id,
+            id: userId,
             name: name,
             avatar: `https://avatar.vercel.sh/${email}?size=128`,
             isMuted: false,
