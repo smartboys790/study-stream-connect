@@ -35,7 +35,7 @@ const RoomJoinCard = () => {
       try {
         const { data: rooms, error } = await supabase
           .from('rooms')
-          .select('*')
+          .select('id, name, is_public, scheduled_time')
           .order('name');
 
         if (error) {
