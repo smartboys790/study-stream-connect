@@ -1,8 +1,10 @@
+
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useAuth } from "./AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import Peer, { MediaConnection } from "peerjs";
 
 interface Participant {
   id: string;
@@ -12,6 +14,7 @@ interface Participant {
   isMuted: boolean;
   isVideoOff: boolean;
   isScreenSharing: boolean;
+  peerId?: string;
 }
 
 interface ChatMessage {
@@ -20,6 +23,11 @@ interface ChatMessage {
   senderName: string;
   text: string;
   timestamp: Date;
+}
+
+interface PeerConnection {
+  peerId: string;
+  call: MediaConnection;
 }
 
 interface RoomContextType {
@@ -69,6 +77,8 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
   const localStreamRef = useRef<MediaStream | null>(null);
   const screenShareStreamRef = useRef<MediaStream | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const peerRef = useRef<Peer | null>(null);
+  const peerConnectionsRef = useRef<Map<string, PeerConnection>>(new Map());
 
   useEffect(() => {
     return () => {
@@ -81,6 +91,11 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
+      }
+
+      // Close all peer connections
+      if (peerRef.current) {
+        peerRef.current.destroy();
       }
     };
   }, []);
@@ -284,6 +299,107 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
     }
   };
 
+  const initializePeer = () => {
+    if (!user || !roomId) return null;
+    
+    try {
+      const peerId = `${roomId}-${user.id}`;
+      const peer = new Peer(peerId);
+      
+      peer.on('open', (id) => {
+        console.log('My peer ID is: ' + id);
+        // Update my participant entry with peerId
+        if (user) {
+          setParticipants(prev => 
+            prev.map(p => 
+              p.id === user.id ? { ...p, peerId: id } : p
+            )
+          );
+        }
+      });
+      
+      peer.on('call', (call) => {
+        console.log('Receiving call from:', call.peer);
+        
+        if (localStreamRef.current) {
+          call.answer(localStreamRef.current);
+          
+          call.on('stream', (remoteStream) => {
+            console.log('Received remote stream from:', call.peer);
+            const remotePeerId = call.peer;
+            const remoteUserId = remotePeerId.split('-')[1];
+            
+            setParticipants(prev => 
+              prev.map(p => {
+                if (p.id === remoteUserId) {
+                  return { ...p, stream: remoteStream, peerId: remotePeerId };
+                }
+                return p;
+              })
+            );
+          });
+        } else {
+          console.warn('No local stream to answer call with');
+          call.answer(); // Answer without a stream
+        }
+        
+        // Store the call in our connections
+        const remotePeerId = call.peer;
+        peerConnectionsRef.current.set(remotePeerId, {
+          peerId: remotePeerId,
+          call
+        });
+      });
+      
+      peer.on('error', (err) => {
+        console.error('Peer connection error:', err);
+        toast.error('Connection error. Please try rejoining the room.');
+      });
+      
+      peerRef.current = peer;
+      return peer;
+    } catch (err) {
+      console.error('Error initializing peer:', err);
+      toast.error('Failed to establish peer connection.');
+      return null;
+    }
+  };
+
+  const connectToPeers = () => {
+    if (!peerRef.current || !localStreamRef.current || !user) return;
+    
+    // Connect to each participant
+    participants.forEach(participant => {
+      if (participant.id === user.id || !participant.peerId) return; // Skip self or participants without peerId
+      
+      // Check if we already have a connection to this peer
+      if (peerConnectionsRef.current.has(participant.peerId)) return;
+      
+      console.log('Calling peer:', participant.peerId);
+      
+      const call = peerRef.current!.call(participant.peerId, localStreamRef.current!);
+      
+      call.on('stream', (remoteStream) => {
+        console.log('Received stream from call to:', participant.peerId);
+        
+        setParticipants(prev => 
+          prev.map(p => {
+            if (p.id === participant.id) {
+              return { ...p, stream: remoteStream };
+            }
+            return p;
+          })
+        );
+      });
+      
+      // Store the call
+      peerConnectionsRef.current.set(participant.peerId, {
+        peerId: participant.peerId,
+        call
+      });
+    });
+  };
+
   const setupRealTimePresence = (roomId: string) => {
     if (!roomId || !user) return;
 
@@ -297,24 +413,71 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       .on('presence', { event: 'sync' }, () => {
         const state = channel.presenceState();
         console.log('Presence sync state:', state);
+        
+        // Extract peer IDs from presence state
+        Object.values(state).forEach((presences: any) => {
+          presences.forEach((presence: any) => {
+            if (presence.peerId && presence.user_id !== user.id) {
+              // Update participant with peer ID
+              setParticipants(prev => 
+                prev.map(p => 
+                  p.id === presence.user_id ? { ...p, peerId: presence.peerId } : p
+                )
+              );
+            }
+          });
+        });
+        
+        // Try to connect to peers after we have their peer IDs
+        connectToPeers();
       })
       .on('presence', { event: 'join' }, ({ key, newPresences }) => {
         console.log('User joined:', key, newPresences);
+        
+        // Extract peer IDs from new presences
+        newPresences.forEach((presence: any) => {
+          if (presence.peerId && presence.user_id !== user.id) {
+            // Update participant with peer ID
+            setParticipants(prev => 
+              prev.map(p => 
+                p.id === presence.user_id ? { ...p, peerId: presence.peerId } : p
+              )
+            );
+            
+            // Try to connect to this new peer
+            setTimeout(connectToPeers, 1000);
+          }
+        });
       })
       .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
         console.log('User left:', key, leftPresences);
         
         const leftIds = leftPresences.map((p: any) => p.user_id);
         if (leftIds.length > 0) {
+          // Remove participants who left
           setParticipants(prev => prev.filter(p => !leftIds.includes(p.id)));
+          
+          // Close and remove peer connections
+          leftPresences.forEach((presence: any) => {
+            if (presence.peerId) {
+              const connection = peerConnectionsRef.current.get(presence.peerId);
+              if (connection) {
+                connection.call.close();
+                peerConnectionsRef.current.delete(presence.peerId);
+              }
+            }
+          });
         }
       });
 
     channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
+        const peer = peerRef.current;
+        
         await channel.track({
           user_id: user.id,
           name: user.name,
+          peerId: peer ? peer.id : undefined,
           status: 'online',
           media_status: {
             audio: !isAudioMuted,
@@ -371,14 +534,22 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
     try {
       setIsJoining(true);
       
-      await initLocalStream();
+      // Initialize media stream
+      const stream = await initLocalStream();
       
+      // Set room ID
       setRoomId(id);
       
+      // Fetch existing participants
       await fetchRoomParticipants(id);
       
+      // Initialize WebRTC peer
+      initializePeer();
+      
+      // Setup presence channel for signaling
       setupRealTimePresence(id);
       
+      // Setup chat channel
       setupChatChannel(id);
       
       setChatMessages([
@@ -402,6 +573,7 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
   };
 
   const leaveRoom = () => {
+    // Stop and clear local media streams
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => track.stop());
       localStreamRef.current = null;
@@ -412,11 +584,24 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       screenShareStreamRef.current = null;
     }
     
+    // Close peer connections
+    if (peerRef.current) {
+      peerRef.current.destroy();
+      peerRef.current = null;
+    }
+    
+    peerConnectionsRef.current.forEach(connection => {
+      connection.call.close();
+    });
+    peerConnectionsRef.current.clear();
+    
+    // Close Supabase channels
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;
     }
     
+    // Reset state
     setLocalStream(null);
     setIsScreenSharing(false);
     setRoomId(null);
@@ -486,6 +671,7 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         channelRef.current.track({
           user_id: user.id,
           name: user.name,
+          peerId: peerRef.current?.id,
           status: 'online',
           media_status: {
             audio: !newMuteState,
@@ -529,6 +715,7 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         channelRef.current.track({
           user_id: user.id,
           name: user.name,
+          peerId: peerRef.current?.id,
           status: 'online',
           media_status: {
             audio: !isAudioMuted,
@@ -554,6 +741,37 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         
         if (localStreamRef.current) {
           setLocalStream(localStreamRef.current);
+          
+          // Reconnect with camera stream
+          peerConnectionsRef.current.forEach(connection => {
+            // Close existing connection
+            connection.call.close();
+            
+            // Create a new call with camera stream
+            if (peerRef.current && localStreamRef.current) {
+              const newCall = peerRef.current.call(connection.peerId, localStreamRef.current);
+              
+              newCall.on('stream', (remoteStream) => {
+                const remotePeerId = newCall.peer;
+                const remoteUserId = remotePeerId.split('-')[1];
+                
+                setParticipants(prev => 
+                  prev.map(p => {
+                    if (p.id === remoteUserId) {
+                      return { ...p, stream: remoteStream };
+                    }
+                    return p;
+                  })
+                );
+              });
+              
+              // Update the stored call
+              peerConnectionsRef.current.set(connection.peerId, {
+                peerId: connection.peerId,
+                call: newCall
+              });
+            }
+          });
         }
         
         setIsScreenSharing(false);
@@ -568,6 +786,7 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
           channelRef.current.track({
             user_id: user.id,
             name: user.name,
+            peerId: peerRef.current?.id,
             status: 'online',
             media_status: {
               audio: !isAudioMuted,
@@ -588,10 +807,74 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
           setLocalStream(screenStream);
           setIsScreenSharing(true);
           
+          // Reconnect with screen share stream
+          peerConnectionsRef.current.forEach(connection => {
+            // Close existing connection
+            connection.call.close();
+            
+            // Create a new call with screen stream
+            if (peerRef.current) {
+              const newCall = peerRef.current.call(connection.peerId, screenStream);
+              
+              newCall.on('stream', (remoteStream) => {
+                const remotePeerId = newCall.peer;
+                const remoteUserId = remotePeerId.split('-')[1];
+                
+                setParticipants(prev => 
+                  prev.map(p => {
+                    if (p.id === remoteUserId) {
+                      return { ...p, stream: remoteStream };
+                    }
+                    return p;
+                  })
+                );
+              });
+              
+              // Update the stored call
+              peerConnectionsRef.current.set(connection.peerId, {
+                peerId: connection.peerId,
+                call: newCall
+              });
+            }
+          });
+          
           screenStream.getVideoTracks()[0].onended = () => {
+            // Handle the case when the user stops sharing via the browser UI
             if (localStreamRef.current) {
               setLocalStream(localStreamRef.current);
+              
+              // Reconnect with camera stream
+              peerConnectionsRef.current.forEach(connection => {
+                // Close existing connection
+                connection.call.close();
+                
+                // Create a new call with camera stream
+                if (peerRef.current && localStreamRef.current) {
+                  const newCall = peerRef.current.call(connection.peerId, localStreamRef.current);
+                  
+                  newCall.on('stream', (remoteStream) => {
+                    const remotePeerId = newCall.peer;
+                    const remoteUserId = remotePeerId.split('-')[1];
+                    
+                    setParticipants(prev => 
+                      prev.map(p => {
+                        if (p.id === remoteUserId) {
+                          return { ...p, stream: remoteStream };
+                        }
+                        return p;
+                      })
+                    );
+                  });
+                  
+                  // Update the stored call
+                  peerConnectionsRef.current.set(connection.peerId, {
+                    peerId: connection.peerId,
+                    call: newCall
+                  });
+                }
+              });
             }
+            
             setIsScreenSharing(false);
             
             setParticipants(prev => 
@@ -604,6 +887,7 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
               channelRef.current.track({
                 user_id: user.id,
                 name: user.name,
+                peerId: peerRef.current?.id,
                 status: 'online',
                 media_status: {
                   audio: !isAudioMuted,
@@ -626,6 +910,7 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
             channelRef.current.track({
               user_id: user.id,
               name: user.name,
+              peerId: peerRef.current?.id,
               status: 'online',
               media_status: {
                 audio: !isAudioMuted,
