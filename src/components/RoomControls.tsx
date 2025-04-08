@@ -11,6 +11,7 @@ import {
   Video,
   VideoOff,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 interface RoomControlsProps {
   onLeaveRoom?: () => void;
@@ -71,15 +72,13 @@ const RoomControls = ({ onLeaveRoom }: RoomControlsProps) => {
       <Button
         variant="outline"
         size="icon"
-        className="rounded-full h-10 w-10"
+        className="rounded-full h-10 w-10 relative"
         title="Participants"
       >
-        <div className="relative">
-          <Users size={18} />
-          <span className="absolute -top-2 -right-2 bg-primary text-[10px] text-primary-foreground rounded-full h-4 w-4 flex items-center justify-center">
-            {participants.length}
-          </span>
-        </div>
+        <Users size={18} />
+        <Badge variant="primary" className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-0">
+          {participants.length}
+        </Badge>
       </Button>
 
       <Button

@@ -53,6 +53,17 @@ const VideoTile = ({ participant }: VideoTileProps) => {
   useEffect(() => {
     if (videoRef.current && participant.stream) {
       videoRef.current.srcObject = participant.stream;
+      
+      // Ensure video plays
+      const playVideo = async () => {
+        try {
+          await videoRef.current?.play();
+        } catch (err) {
+          console.error("Error playing video:", err);
+        }
+      };
+      
+      playVideo();
     }
   }, [participant.stream]);
 

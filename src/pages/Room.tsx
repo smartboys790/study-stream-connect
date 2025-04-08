@@ -8,7 +8,9 @@ import VideoGrid from "@/components/VideoGrid";
 import ChatPanel from "@/components/ChatPanel";
 import RoomControls from "@/components/RoomControls";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, AlertCircle } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 const Room = () => {
   const { roomId } = useParams<{ roomId: string }>();
@@ -16,6 +18,8 @@ const Room = () => {
   const { joinRoom, leaveRoom, participants, isJoining } = useRoom();
   const navigate = useNavigate();
   const [hasJoined, setHasJoined] = useState(false);
+  const [roomName, setRoomName] = useState<string>("");
+  const [roomError, setRoomError] = useState<string>("");
 
   useEffect(() => {
     // Check if user is authenticated
@@ -24,25 +28,138 @@ const Room = () => {
       return;
     }
 
-    // Only join the room if we haven't already joined
-    if (roomId && !hasJoined) {
-      setHasJoined(true);
-      joinRoom(roomId);
-    }
+    const loadRoomData = async () => {
+      if (!roomId) return;
 
-    // Only clean up when component is unmounting completely
-    return () => {
-      // We don't automatically leave the room here anymore
-      // This prevents the room from being left when the component
-      // re-renders due to state changes
+      try {
+        // Check if the room exists in the database
+        const { data: roomData, error: roomError } = await supabase
+          .from('rooms')
+          .select('name')
+          .eq('id', roomId)
+          .single();
+
+        if (roomError || !roomData) {
+          console.error("Room error:", roomError);
+          setRoomError("Room not found or inaccessible");
+          return;
+        }
+
+        setRoomName(roomData.name);
+
+        // Register user as participant in the room
+        if (user) {
+          const { error: participantError } = await supabase
+            .from('room_participants')
+            .upsert({
+              room_id: roomId,
+              user_id: user.id,
+              is_active: true
+            }, {
+              onConflict: 'room_id,user_id'
+            });
+
+          if (participantError) {
+            console.error("Error joining room:", participantError);
+            toast.error("Failed to join room");
+            return;
+          }
+
+          // Only join the room if we haven't already joined
+          if (!hasJoined) {
+            setHasJoined(true);
+            joinRoom(roomId);
+          }
+        }
+      } catch (err) {
+        console.error("Error loading room:", err);
+        setRoomError("Error loading room");
+      }
     };
-  }, [roomId, isAuthenticated, joinRoom, navigate, hasJoined]);
+
+    loadRoomData();
+
+    return () => {
+      // This cleanup function will only run when the component is unmounting
+      if (hasJoined && roomId && user) {
+        // Update the participant's active status to false
+        supabase
+          .from('room_participants')
+          .update({ is_active: false })
+          .eq('room_id', roomId)
+          .eq('user_id', user.id)
+          .then(({ error }) => {
+            if (error) console.error("Error updating participant status:", error);
+          });
+      }
+    };
+  }, [roomId, isAuthenticated, user, hasJoined, joinRoom, navigate]);
+
+  // Set up real-time subscription to room participants
+  useEffect(() => {
+    if (!roomId) return;
+
+    // Subscribe to changes in the room_participants table
+    const channel = supabase
+      .channel('room_participants_changes')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'room_participants',
+        filter: `room_id=eq.${roomId}`
+      }, (payload) => {
+        console.log('Participants change:', payload);
+        // The RoomContext will handle participant management
+        // This is just for logging and future enhancement
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [roomId]);
 
   // Handle manual leaving
-  const handleLeaveRoom = () => {
+  const handleLeaveRoom = async () => {
+    if (user && roomId) {
+      // Update participant status in database
+      const { error } = await supabase
+        .from('room_participants')
+        .update({ is_active: false })
+        .eq('room_id', roomId)
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error("Error leaving room:", error);
+        toast.error("Error updating room status");
+      }
+    }
+    
     leaveRoom();
     navigate("/dashboard");
   };
+
+  if (roomError) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <Header />
+        <div className="flex-1 flex items-center justify-center p-4">
+          <div className="text-center">
+            <div className="mx-auto mb-4 text-red-500">
+              <AlertCircle size={48} />
+            </div>
+            <h2 className="text-2xl font-semibold mb-4">Room Error</h2>
+            <p className="text-muted-foreground mb-6">
+              {roomError}
+            </p>
+            <Button onClick={() => navigate("/dashboard")}>
+              Return to Dashboard
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!roomId) {
     return (
@@ -96,9 +213,9 @@ const Room = () => {
               <ArrowLeft size={16} />
             </Button>
             <div>
-              <h1 className="text-xl font-semibold">Study Room</h1>
+              <h1 className="text-xl font-semibold">{roomName || "Study Room"}</h1>
               <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                <span>Room:</span>
+                <span>Room ID:</span>
                 <span className="font-medium">{roomId}</span>
                 <span className="text-xs">({participants.length} participants)</span>
               </div>

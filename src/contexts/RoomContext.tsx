@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode, useRe
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useAuth } from "./AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 
 interface Participant {
   id: string;
@@ -68,6 +69,7 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
   
   const localStreamRef = useRef<MediaStream | null>(null);
   const screenShareStreamRef = useRef<MediaStream | null>(null);
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   // Cleanup function for when component unmounts or user leaves room
   useEffect(() => {
@@ -77,6 +79,11 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       }
       if (screenShareStreamRef.current) {
         screenShareStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+      
+      // Clean up any Supabase channel subscriptions
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
       }
     };
   }, []);
@@ -88,18 +95,75 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       return "";
     }
 
-    // In a real app, we would make an API call to create a room
-    // For demo, we'll generate a random room ID
-    const newRoomId = Math.random().toString(36).substring(2, 9);
-    
     try {
-      // In a real app, we would register this room on the backend
+      // Note: The actual room creation is now handled in RoomJoinCard component
+      // This function is kept for interface compatibility
+      // In a real app with WebRTC, we would create signaling channels here
+      
+      // Generate a room ID for convenience
+      const newRoomId = crypto.randomUUID();
       toast.success(`Room created successfully!`);
       return newRoomId;
     } catch (error) {
       console.error("Error creating room:", error);
       toast.error("Failed to create room. Please try again.");
       return "";
+    }
+  };
+
+  const fetchRoomParticipants = async (roomId: string) => {
+    if (!roomId) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('room_participants')
+        .select(`
+          id,
+          user_id,
+          auth.users (
+            id,
+            email
+          )
+        `)
+        .eq('room_id', roomId)
+        .eq('is_active', true);
+
+      if (error) {
+        console.error("Error fetching participants:", error);
+        return;
+      }
+
+      // Format participants data to match our Participant interface
+      // For a real app, this would include setting up WebRTC connections
+      const roomParticipants = data
+        .filter(p => p.user_id !== user?.id) // Filter out current user
+        .map(p => {
+          // Extract user info
+          const userData = p.auth?.users || {};
+          const email = userData.email || "Unknown User";
+          const name = email.split('@')[0]; // Simple name extraction
+          
+          return {
+            id: p.user_id,
+            name: name,
+            avatar: `https://avatar.vercel.sh/${email}?size=128`,
+            isMuted: false,
+            isVideoOff: false,
+            isScreenSharing: false
+          };
+        });
+
+      // Update participants state to include these remote participants
+      if (roomParticipants.length > 0) {
+        setParticipants(prev => {
+          // Filter out any duplicates
+          const existingIds = prev.map(p => p.id);
+          const newParticipants = roomParticipants.filter(p => !existingIds.includes(p.id));
+          return [...prev, ...newParticipants];
+        });
+      }
+    } catch (err) {
+      console.error("Error processing participants:", err);
     }
   };
 
@@ -245,6 +309,96 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
     }
   };
 
+  const setupRealTimePresence = (roomId: string) => {
+    if (!roomId || !user) return;
+
+    // Clean up previous channel if it exists
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+    }
+
+    // Set up real-time presence for this room
+    const channel = supabase.channel(`room:${roomId}`);
+
+    // Set up presence events
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        console.log('Presence sync state:', state);
+      })
+      .on('presence', { event: 'join' }, ({ key, newPresences }) => {
+        console.log('User joined:', key, newPresences);
+        // In a real app, we would initiate WebRTC connections here
+      })
+      .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
+        console.log('User left:', key, leftPresences);
+        
+        // Remove participants who have left
+        const leftIds = leftPresences.map((p: any) => p.user_id);
+        if (leftIds.length > 0) {
+          setParticipants(prev => prev.filter(p => !leftIds.includes(p.id)));
+        }
+      });
+
+    // Subscribe to the channel
+    channel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        // Track user's presence in the room
+        await channel.track({
+          user_id: user.id,
+          name: user.name,
+          status: 'online',
+          media_status: {
+            audio: !isAudioMuted,
+            video: !isVideoOff,
+            screen: isScreenSharing
+          }
+        });
+      }
+    });
+
+    // Save channel reference for cleanup
+    channelRef.current = channel;
+  };
+
+  // Set up broadcast channel for chat messages
+  const setupChatChannel = (roomId: string) => {
+    if (!roomId || !user) return;
+
+    // Set up a channel for chat messages
+    const chatChannel = supabase.channel(`chat:${roomId}`);
+
+    chatChannel
+      .on('broadcast', { event: 'chat_message' }, (payload) => {
+        // Handle incoming chat message
+        if (payload.payload && payload.payload.message) {
+          const msg = payload.payload.message;
+          
+          // Add to chat messages if it's not from the current user
+          if (msg.senderId !== user.id) {
+            setChatMessages(prev => [...prev, {
+              id: msg.id,
+              senderId: msg.senderId,
+              senderName: msg.senderName,
+              text: msg.text,
+              timestamp: new Date(msg.timestamp)
+            }]);
+          }
+        }
+      })
+      .subscribe();
+
+    // Add to channelRef for cleanup
+    const prevChannel = channelRef.current;
+    channelRef.current = {
+      ...prevChannel,
+      unsubscribe: () => {
+        prevChannel?.unsubscribe();
+        chatChannel.unsubscribe();
+      }
+    } as any;
+  };
+
   const joinRoom = async (id: string) => {
     if (!user) {
       toast.error("You must be logged in to join a room");
@@ -258,72 +412,26 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       // Initialize local media stream - now handles fallbacks for no media devices
       await initLocalStream();
       
-      // In a real app, we would make an API call to join a room
-      // For demo, we'll just set the room ID and add some mock participants
+      // Set room ID
       setRoomId(id);
       
-      // Add mock participants for demo - in a real app, these would come from the server
-      // For synchronization, we'd get a list of current participants from the backend
-      const mockParticipants = [
-        {
-          id: "user-1",
-          name: "Alex Johnson",
-          avatar: "https://avatar.vercel.sh/alex@example.com?size=128",
-          isMuted: false,
-          isVideoOff: false,
-          isScreenSharing: false
-        },
-        {
-          id: "user-2",
-          name: "Sam Taylor",
-          avatar: "https://avatar.vercel.sh/sam@example.com?size=128",
-          isMuted: true,
-          isVideoOff: false,
-          isScreenSharing: false
-        },
-        {
-          id: "user-3",
-          name: "Jordan Lee",
-          avatar: "https://avatar.vercel.sh/jordan@example.com?size=128",
-          isMuted: false,
-          isVideoOff: true,
-          isScreenSharing: false
-        }
-      ];
+      // Fetch existing participants
+      await fetchRoomParticipants(id);
       
-      // In a real app, we would establish WebRTC connections with other participants
-      setParticipants(prev => {
-        // Filter out any duplicates (in case user is already in the list)
-        const existingUserIds = prev.map(p => p.id);
-        const filteredMockParticipants = mockParticipants.filter(
-          p => !existingUserIds.includes(p.id)
-        );
-        
-        return [...prev, ...filteredMockParticipants];
-      });
+      // Set up real-time presence
+      setupRealTimePresence(id);
       
-      // Add some mock chat messages
+      // Set up chat channel
+      setupChatChannel(id);
+      
+      // Add some initial chat messages for demo purposes
       setChatMessages([
         {
-          id: "msg-1",
-          senderId: "user-1",
-          senderName: "Alex Johnson",
-          text: "Hey everyone! Ready to study?",
-          timestamp: new Date(Date.now() - 1000 * 60 * 5) // 5 minutes ago
-        },
-        {
-          id: "msg-2",
-          senderId: "user-2",
-          senderName: "Sam Taylor",
-          text: "Yes, let's focus on chapter 5 today.",
-          timestamp: new Date(Date.now() - 1000 * 60 * 4) // 4 minutes ago
-        },
-        {
-          id: "msg-3",
-          senderId: "user-3",
-          senderName: "Jordan Lee",
-          text: "I'm having trouble with the complex numbers section. Can we go over that?",
-          timestamp: new Date(Date.now() - 1000 * 60 * 2) // 2 minutes ago
+          id: "msg-system-1",
+          senderId: "system",
+          senderName: "System",
+          text: "Welcome to the room! You can chat with other participants here.",
+          timestamp: new Date()
         }
       ]);
       
@@ -349,66 +457,51 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       screenShareStreamRef.current = null;
     }
     
+    // Clean up channel subscriptions
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+    
     setLocalStream(null);
     setIsScreenSharing(false);
     setRoomId(null);
     setParticipants([]);
     setChatMessages([]);
     toast.info("You have left the room");
-    
-    // In a real app, we would notify other participants that this user has left
   };
 
   const sendChatMessage = (text: string) => {
     if (!user || !roomId) return;
     
+    const messageId = `msg-${crypto.randomUUID()}`;
+    
     const newMessage: ChatMessage = {
-      id: `msg-${Math.random().toString(36).substring(2, 9)}`,
+      id: messageId,
       senderId: user.id,
       senderName: user.name,
       text,
       timestamp: new Date()
     };
     
+    // Add to local chat messages
     setChatMessages(prev => [...prev, newMessage]);
     
-    // In a real app, we would broadcast this message to other participants
-    // Add a simulated response for demo purposes
-    const mockResponders = [
-      { id: "user-1", name: "Alex Johnson" },
-      { id: "user-2", name: "Sam Taylor" },
-      { id: "user-3", name: "Jordan Lee" }
-    ];
-    
-    // 30% chance of getting a mock response
-    if (Math.random() < 0.3) {
-      const responder = mockResponders[Math.floor(Math.random() * mockResponders.length)];
-      const mockResponses = [
-        "Good point!",
-        "I agree with that.",
-        "Can you explain more?",
-        "I'm not sure I understand, can you elaborate?",
-        "That makes sense!",
-        "Let's move on to the next topic.",
-        "Does anyone need help with this section?",
-        "Should we take a 5-minute break soon?"
-      ];
-      
-      const response = mockResponses[Math.floor(Math.random() * mockResponses.length)];
-      
-      // Add mock response after a short delay
-      setTimeout(() => {
-        const mockMessage: ChatMessage = {
-          id: `msg-${Math.random().toString(36).substring(2, 9)}`,
-          senderId: responder.id,
-          senderName: responder.name,
-          text: response,
-          timestamp: new Date()
-        };
-        
-        setChatMessages(prev => [...prev, mockMessage]);
-      }, 1500 + Math.random() * 2000); // Random delay between 1.5-3.5 seconds
-    }
+    // Broadcast to other participants
+    const channel = supabase.channel(`chat:${roomId}`);
+    channel.send({
+      type: 'broadcast',
+      event: 'chat_message',
+      payload: {
+        message: {
+          id: messageId,
+          senderId: user.id,
+          senderName: user.name,
+          text,
+          timestamp: new Date().toISOString()
+        }
+      }
+    });
   };
 
   const toggleAudio = () => {
@@ -438,11 +531,23 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
           p.id === user.id ? { ...p, isMuted: newMuteState } : p
         )
       );
+      
+      // Broadcast audio status change if in a room
+      if (roomId && channelRef.current) {
+        channelRef.current.track({
+          user_id: user.id,
+          name: user.name,
+          status: 'online',
+          media_status: {
+            audio: !newMuteState,
+            video: !isVideoOff,
+            screen: isScreenSharing
+          }
+        });
+      }
     }
     
     toast.info(newMuteState ? "Microphone muted" : "Microphone unmuted");
-    
-    // In a real app, we would notify other participants about the mute status change
   };
 
   const toggleVideo = () => {
@@ -472,11 +577,23 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
           p.id === user.id ? { ...p, isVideoOff: newVideoOffState } : p
         )
       );
+      
+      // Broadcast video status change if in a room
+      if (roomId && channelRef.current) {
+        channelRef.current.track({
+          user_id: user.id,
+          name: user.name,
+          status: 'online',
+          media_status: {
+            audio: !isAudioMuted,
+            video: !newVideoOffState,
+            screen: isScreenSharing
+          }
+        });
+      }
     }
     
     toast.info(newVideoOffState ? "Camera turned off" : "Camera turned on");
-    
-    // In a real app, we would notify other participants about the video status change
   };
 
   const toggleScreenShare = async () => {
@@ -504,9 +621,21 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
           )
         );
         
-        toast.info("Screen sharing stopped");
+        // Broadcast screen sharing status change
+        if (roomId && channelRef.current) {
+          channelRef.current.track({
+            user_id: user.id,
+            name: user.name,
+            status: 'online',
+            media_status: {
+              audio: !isAudioMuted,
+              video: !isVideoOff,
+              screen: false
+            }
+          });
+        }
         
-        // In a real app, we would notify other participants that screen sharing has stopped
+        toast.info("Screen sharing stopped");
       } else {
         // Start screen sharing
         try {
@@ -532,9 +661,21 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
               )
             );
             
-            toast.info("Screen sharing stopped");
+            // Broadcast screen sharing status change
+            if (roomId && channelRef.current) {
+              channelRef.current.track({
+                user_id: user.id,
+                name: user.name,
+                status: 'online',
+                media_status: {
+                  audio: !isAudioMuted,
+                  video: !isVideoOff,
+                  screen: false
+                }
+              });
+            }
             
-            // In a real app, we would notify other participants that screen sharing has stopped
+            toast.info("Screen sharing stopped");
           };
           
           // Update participant list
@@ -544,10 +685,21 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
             )
           );
           
-          toast.success("Screen sharing started");
+          // Broadcast screen sharing status change
+          if (roomId && channelRef.current) {
+            channelRef.current.track({
+              user_id: user.id,
+              name: user.name,
+              status: 'online',
+              media_status: {
+                audio: !isAudioMuted,
+                video: !isVideoOff,
+                screen: true
+              }
+            });
+          }
           
-          // In a real app, we would notify other participants that screen sharing has started
-          // and send them the screen sharing stream
+          toast.success("Screen sharing started");
         } catch (err) {
           console.error("Error starting screen share:", err);
           toast.error("Failed to share screen. You may have denied permission.");
