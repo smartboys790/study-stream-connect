@@ -76,7 +76,7 @@ const RoomControls = ({ onLeaveRoom }: RoomControlsProps) => {
         title="Participants"
       >
         <Users size={18} />
-        <Badge variant="primary" className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-0">
+        <Badge variant="default" className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-0">
           {participants.length}
         </Badge>
       </Button>

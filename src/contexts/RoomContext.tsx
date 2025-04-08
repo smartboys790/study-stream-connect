@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -71,7 +70,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
   const screenShareStreamRef = useRef<MediaStream | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
-  // Cleanup function for when component unmounts or user leaves room
   useEffect(() => {
     return () => {
       if (localStreamRef.current) {
@@ -81,7 +79,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         screenShareStreamRef.current.getTracks().forEach(track => track.stop());
       }
       
-      // Clean up any Supabase channel subscriptions
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
       }
@@ -96,11 +93,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
     }
 
     try {
-      // Note: The actual room creation is now handled in RoomJoinCard component
-      // This function is kept for interface compatibility
-      // In a real app with WebRTC, we would create signaling channels here
-      
-      // Generate a room ID for convenience
       const newRoomId = crypto.randomUUID();
       toast.success(`Room created successfully!`);
       return newRoomId;
@@ -120,7 +112,7 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         .select(`
           id,
           user_id,
-          auth.users (
+          auth.users!inner (
             id,
             email
           )
@@ -133,15 +125,12 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         return;
       }
 
-      // Format participants data to match our Participant interface
-      // For a real app, this would include setting up WebRTC connections
       const roomParticipants = data
-        .filter(p => p.user_id !== user?.id) // Filter out current user
+        .filter(p => p.user_id !== user?.id)
         .map(p => {
-          // Extract user info
           const userData = p.auth?.users || {};
           const email = userData.email || "Unknown User";
-          const name = email.split('@')[0]; // Simple name extraction
+          const name = email.split('@')[0];
           
           return {
             id: p.user_id,
@@ -153,10 +142,8 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
           };
         });
 
-      // Update participants state to include these remote participants
       if (roomParticipants.length > 0) {
         setParticipants(prev => {
-          // Filter out any duplicates
           const existingIds = prev.map(p => p.id);
           const newParticipants = roomParticipants.filter(p => !existingIds.includes(p.id));
           return [...prev, ...newParticipants];
@@ -169,7 +156,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
 
   const initLocalStream = async () => {
     try {
-      // Try to get user media with both video and audio
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
         video: true
@@ -180,10 +166,8 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       setIsAudioMuted(false);
       setIsVideoOff(false);
       
-      // Initial participant is the local user
       if (user) {
         setParticipants(prev => {
-          // Check if user is already in participants list
           const isExisting = prev.some(p => p.id === user.id);
           if (isExisting) {
             return prev.map(p => 
@@ -219,7 +203,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       console.error("Error accessing media devices:", err);
       
       try {
-        // If we can't get both, try just audio
         const audioOnlyStream = await navigator.mediaDevices.getUserMedia({
           audio: true,
           video: false
@@ -228,12 +211,10 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         localStreamRef.current = audioOnlyStream;
         setLocalStream(audioOnlyStream);
         setIsAudioMuted(false);
-        setIsVideoOff(true); // Video is off since we don't have it
+        setIsVideoOff(true);
         
-        // Initial participant is the local user with audio only
         if (user) {
           setParticipants(prev => {
-            // Check if user is already in participants list
             const isExisting = prev.some(p => p.id === user.id);
             if (isExisting) {
               return prev.map(p => 
@@ -269,10 +250,8 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       } catch (audioErr) {
         console.error("Error accessing audio devices:", audioErr);
         
-        // If we can't get any media, join without media but set participant
         if (user) {
           setParticipants(prev => {
-            // Check if user is already in participants list
             const isExisting = prev.some(p => p.id === user.id);
             if (isExisting) {
               return prev.map(p => 
@@ -312,15 +291,12 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
   const setupRealTimePresence = (roomId: string) => {
     if (!roomId || !user) return;
 
-    // Clean up previous channel if it exists
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
     }
 
-    // Set up real-time presence for this room
     const channel = supabase.channel(`room:${roomId}`);
 
-    // Set up presence events
     channel
       .on('presence', { event: 'sync' }, () => {
         const state = channel.presenceState();
@@ -328,22 +304,18 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       })
       .on('presence', { event: 'join' }, ({ key, newPresences }) => {
         console.log('User joined:', key, newPresences);
-        // In a real app, we would initiate WebRTC connections here
       })
       .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
         console.log('User left:', key, leftPresences);
         
-        // Remove participants who have left
         const leftIds = leftPresences.map((p: any) => p.user_id);
         if (leftIds.length > 0) {
           setParticipants(prev => prev.filter(p => !leftIds.includes(p.id)));
         }
       });
 
-    // Subscribe to the channel
     channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
-        // Track user's presence in the room
         await channel.track({
           user_id: user.id,
           name: user.name,
@@ -357,24 +329,19 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       }
     });
 
-    // Save channel reference for cleanup
     channelRef.current = channel;
   };
 
-  // Set up broadcast channel for chat messages
   const setupChatChannel = (roomId: string) => {
     if (!roomId || !user) return;
 
-    // Set up a channel for chat messages
     const chatChannel = supabase.channel(`chat:${roomId}`);
 
     chatChannel
       .on('broadcast', { event: 'chat_message' }, (payload) => {
-        // Handle incoming chat message
         if (payload.payload && payload.payload.message) {
           const msg = payload.payload.message;
           
-          // Add to chat messages if it's not from the current user
           if (msg.senderId !== user.id) {
             setChatMessages(prev => [...prev, {
               id: msg.id,
@@ -388,7 +355,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       })
       .subscribe();
 
-    // Add to channelRef for cleanup
     const prevChannel = channelRef.current;
     channelRef.current = {
       ...prevChannel,
@@ -409,22 +375,16 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
     try {
       setIsJoining(true);
       
-      // Initialize local media stream - now handles fallbacks for no media devices
       await initLocalStream();
       
-      // Set room ID
       setRoomId(id);
       
-      // Fetch existing participants
       await fetchRoomParticipants(id);
       
-      // Set up real-time presence
       setupRealTimePresence(id);
       
-      // Set up chat channel
       setupChatChannel(id);
       
-      // Add some initial chat messages for demo purposes
       setChatMessages([
         {
           id: "msg-system-1",
@@ -446,7 +406,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
   };
 
   const leaveRoom = () => {
-    // Stop all local media tracks
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => track.stop());
       localStreamRef.current = null;
@@ -457,7 +416,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       screenShareStreamRef.current = null;
     }
     
-    // Clean up channel subscriptions
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;
@@ -484,10 +442,8 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       timestamp: new Date()
     };
     
-    // Add to local chat messages
     setChatMessages(prev => [...prev, newMessage]);
     
-    // Broadcast to other participants
     const channel = supabase.channel(`chat:${roomId}`);
     channel.send({
       type: 'broadcast',
@@ -506,7 +462,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
 
   const toggleAudio = () => {
     if (!localStream) {
-      // If no stream, can't toggle audio
       toast.error("No audio available");
       return;
     }
@@ -524,7 +479,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
     
     setIsAudioMuted(newMuteState);
     
-    // Update participant list
     if (user) {
       setParticipants(prev => 
         prev.map(p => 
@@ -532,7 +486,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         )
       );
       
-      // Broadcast audio status change if in a room
       if (roomId && channelRef.current) {
         channelRef.current.track({
           user_id: user.id,
@@ -552,7 +505,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
 
   const toggleVideo = () => {
     if (!localStream) {
-      // If no stream, can't toggle video
       toast.error("No video available");
       return;
     }
@@ -570,7 +522,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
     
     setIsVideoOff(newVideoOffState);
     
-    // Update participant list
     if (user) {
       setParticipants(prev => 
         prev.map(p => 
@@ -578,7 +529,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         )
       );
       
-      // Broadcast video status change if in a room
       if (roomId && channelRef.current) {
         channelRef.current.track({
           user_id: user.id,
@@ -601,27 +551,23 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
     
     try {
       if (isScreenSharing) {
-        // Stop screen sharing
         if (screenShareStreamRef.current) {
           screenShareStreamRef.current.getTracks().forEach(track => track.stop());
           screenShareStreamRef.current = null;
         }
         
-        // Revert back to camera
         if (localStreamRef.current) {
           setLocalStream(localStreamRef.current);
         }
         
         setIsScreenSharing(false);
         
-        // Update participant list
         setParticipants(prev => 
           prev.map(p => 
             p.id === user.id ? { ...p, isScreenSharing: false } : p
           )
         );
         
-        // Broadcast screen sharing status change
         if (roomId && channelRef.current) {
           channelRef.current.track({
             user_id: user.id,
@@ -637,7 +583,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         
         toast.info("Screen sharing stopped");
       } else {
-        // Start screen sharing
         try {
           const screenStream = await navigator.mediaDevices.getDisplayMedia({
             video: true
@@ -647,21 +592,18 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
           setLocalStream(screenStream);
           setIsScreenSharing(true);
           
-          // Handle when user stops sharing via browser UI
           screenStream.getVideoTracks()[0].onended = () => {
             if (localStreamRef.current) {
               setLocalStream(localStreamRef.current);
             }
             setIsScreenSharing(false);
             
-            // Update participant list
             setParticipants(prev => 
               prev.map(p => 
                 p.id === user.id ? { ...p, isScreenSharing: false } : p
               )
             );
             
-            // Broadcast screen sharing status change
             if (roomId && channelRef.current) {
               channelRef.current.track({
                 user_id: user.id,
@@ -678,14 +620,12 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
             toast.info("Screen sharing stopped");
           };
           
-          // Update participant list
           setParticipants(prev => 
             prev.map(p => 
               p.id === user.id ? { ...p, isScreenSharing: true } : p
             )
           );
           
-          // Broadcast screen sharing status change
           if (roomId && channelRef.current) {
             channelRef.current.track({
               user_id: user.id,
