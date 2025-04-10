@@ -163,6 +163,18 @@ const RoomJoinCard = () => {
       toast.error("An unexpected error occurred");
     } finally {
       setIsCreating(false);
+      // Refresh the available rooms list after creation
+      const fetchRooms = async () => {
+        const { data: rooms, error } = await supabase
+          .from('rooms')
+          .select('id, name, is_public, scheduled_time')
+          .order('name');
+  
+        if (!error && rooms) {
+          setAvailableRooms(rooms);
+        }
+      };
+      fetchRooms();
     }
   };
 
@@ -388,9 +400,8 @@ const RoomJoinCard = () => {
             variant="outline" 
             className="w-full"
             onClick={() => isAuthenticated ? setCreateDialogOpen(true) : navigate("/login")}
-            disabled={isCreating || !isAuthenticated}
           >
-            {isCreating ? "Creating..." : (isAuthenticated ? "Create New Room" : "Login to Create Room")}
+            {isAuthenticated ? "Create New Room" : "Login to Create Room"}
           </Button>
         </CardFooter>
       </Card>
@@ -415,6 +426,7 @@ const RoomJoinCard = () => {
                     <FormControl>
                       <Input {...field} placeholder="Enter room name" />
                     </FormControl>
+                    <FormMessage />
                   </FormItem>
                 )}
               />

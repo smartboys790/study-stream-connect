@@ -70,15 +70,24 @@ const Dashboard = () => {
 
         // Get participant counts for each room
         const roomIds = participantData?.map(p => p.room_id) || [];
+        
+        // Fixed: Use count() aggregation instead of group()
         const { data: countData, error: countError } = await supabase
           .from('room_participants')
-          .select('room_id, count', { count: 'exact' })
+          .select('room_id, count', { count: 'exact', head: false })
           .in('room_id', roomIds)
-          .eq('is_active', true)
-          .group('room_id');
+          .eq('is_active', true);
 
         if (countError) {
           console.error("Error fetching participant counts:", countError);
+        }
+
+        // Create a map of room_id to participant count
+        const roomCounts = {};
+        if (countData) {
+          countData.forEach(row => {
+            roomCounts[row.room_id] = roomCounts[row.room_id] ? roomCounts[row.room_id] + 1 : 1;
+          });
         }
 
         // Map the counts to each room
@@ -86,7 +95,7 @@ const Dashboard = () => {
           const room = item.rooms;
           if (!room) return null;
           
-          const count = countData?.find(c => c.room_id === item.room_id)?.count || 0;
+          const count = roomCounts[item.room_id] || 0;
           const lastJoined = new Date(item.joined_at);
           const now = new Date();
           const diffTime = Math.abs(now.getTime() - lastJoined.getTime());
@@ -142,7 +151,8 @@ const Dashboard = () => {
           .from('room_participants')
           .select(`
             joined_at,
-            room_id
+            room_id,
+            is_active
           `)
           .eq('user_id', user.id)
           .gte('joined_at', startOfWeek.toISOString());
@@ -164,14 +174,16 @@ const Dashboard = () => {
           };
         }
 
-        // Calculate study time (assuming average 30min per session for demo)
-        const totalMinutes = sessionData.length * 30;
+        // Calculate study time - use 30 min per completed session
+        // We could make this more accurate with actual join/leave times
+        const completedSessions = sessionData.filter(session => !session.is_active);
+        const totalMinutes = completedSessions.length * 30;
         const hours = Math.floor(totalMinutes / 60);
         const minutes = totalMinutes % 60;
         const studyTimeThisWeek = `${hours}h ${minutes}m`;
 
-        // Count unique study sessions
-        const studySessions = sessionData.length;
+        // Count unique study sessions (completed)
+        const studySessions = completedSessions.length;
 
         // Count unique rooms joined
         const uniqueRooms = new Set(sessionData.map(session => session.room_id)).size;
@@ -195,35 +207,72 @@ const Dashboard = () => {
       try {
         const now = new Date();
         
-        // Get upcoming scheduled rooms
-        const { data: upcomingData, error: upcomingError } = await supabase
+        // First, get rooms created by the user
+        const { data: userRooms, error: userRoomsError } = await supabase
           .from('rooms')
-          .select(`
-            id,
-            name,
-            scheduled_time,
-            is_public
-          `)
+          .select('id, name, scheduled_time')
+          .eq('created_by', user.id)
           .gte('scheduled_time', now.toISOString())
           .order('scheduled_time');
 
-        if (upcomingError) {
-          console.error("Error fetching upcoming sessions:", upcomingError);
-          return [];
+        if (userRoomsError) {
+          console.error("Error fetching user rooms:", userRoomsError);
         }
 
-        // Transform the data
-        return upcomingData.map(room => {
-          const scheduledTime = new Date(room.scheduled_time!);
-          const isActive = scheduledTime <= now;
+        // Then, get rooms the user is scheduled to join
+        const { data: scheduledRooms, error: scheduledError } = await supabase
+          .from('room_participants')
+          .select(`
+            room_id,
+            rooms(id, name, scheduled_time)
+          `)
+          .eq('user_id', user.id)
+          .is('is_active', false); // User has joined but not active
+
+        if (scheduledError) {
+          console.error("Error fetching scheduled rooms:", scheduledError);
+        }
+
+        // Combine and filter for future scheduled rooms
+        const allSessionsMap = new Map();
+        
+        // Add user-created rooms
+        if (userRooms) {
+          userRooms.forEach(room => {
+            if (room.scheduled_time) {
+              allSessionsMap.set(room.id, {
+                id: room.id,
+                name: room.name,
+                scheduled_time: room.scheduled_time,
+                is_active: new Date(room.scheduled_time) <= now
+              });
+            }
+          });
+        }
+        
+        // Add rooms user has joined
+        if (scheduledRooms) {
+          scheduledRooms.forEach(item => {
+            if (item.rooms && item.rooms.scheduled_time) {
+              // Check if this is a future scheduled room
+              const scheduledTime = new Date(item.rooms.scheduled_time);
+              if (scheduledTime >= now) {
+                allSessionsMap.set(item.rooms.id, {
+                  id: item.rooms.id,
+                  name: item.rooms.name,
+                  scheduled_time: item.rooms.scheduled_time,
+                  is_active: scheduledTime <= now
+                });
+              }
+            }
+          });
+        }
+        
+        // Convert to array and sort by scheduled time
+        const allSessions = Array.from(allSessionsMap.values())
+          .sort((a, b) => new Date(a.scheduled_time).getTime() - new Date(b.scheduled_time).getTime());
           
-          return {
-            id: room.id,
-            name: room.name,
-            scheduled_time: room.scheduled_time!,
-            is_active: isActive
-          };
-        });
+        return allSessions;
       } catch (err) {
         console.error("Error fetching upcoming sessions:", err);
         return [];
@@ -414,7 +463,7 @@ const Dashboard = () => {
                           size="sm" 
                           variant={session.is_active ? "default" : "outline"}
                           onClick={() => handleJoinRoom(session.id)}
-                          disabled={!session.is_active}
+                          className={session.is_active ? "bg-study-600 hover:bg-study-700" : ""}
                         >
                           {session.is_active ? "Join" : "Scheduled"}
                         </Button>
