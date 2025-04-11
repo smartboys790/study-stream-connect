@@ -21,6 +21,7 @@ import { useParams } from "react-router-dom";
 import { useState } from "react";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Input } from "@/components/ui/input";
 
 interface RoomControlsProps {
   onLeaveRoom?: () => void;
@@ -38,10 +39,13 @@ const RoomControls = ({ onLeaveRoom, toggleChat, isChatOpen }: RoomControlsProps
     toggleScreenShare,
     leaveRoom,
     participants,
+    sendChatMessage,
   } = useRoom();
   
   const { roomId } = useParams<{ roomId: string }>();
   const [participantsDrawerOpen, setParticipantsDrawerOpen] = useState(false);
+  const [directMessage, setDirectMessage] = useState<string>("");
+  const [selectedParticipant, setSelectedParticipant] = useState<string | null>(null);
 
   const handleLeaveRoom = () => {
     // Turn off camera and mic before leaving
@@ -81,6 +85,17 @@ const RoomControls = ({ onLeaveRoom, toggleChat, isChatOpen }: RoomControlsProps
       .map((part) => part[0])
       .join("")
       .toUpperCase();
+  };
+
+  const sendDirectMessage = (participantId: string) => {
+    if (directMessage.trim()) {
+      // Add @ mention to direct message
+      const messageWithMention = `@${participants.find(p => p.id === participantId)?.name}: ${directMessage}`;
+      sendChatMessage(messageWithMention);
+      setDirectMessage("");
+      setSelectedParticipant(null);
+      toast.success("Direct message sent");
+    }
   };
 
   return (
@@ -194,9 +209,34 @@ const RoomControls = ({ onLeaveRoom, toggleChat, isChatOpen }: RoomControlsProps
                     </div>
                   </div>
                 </div>
-                <Button variant="outline" size="sm">
-                  Message
-                </Button>
+                <div>
+                  {selectedParticipant === participant.id ? (
+                    <div className="flex gap-2">
+                      <Input 
+                        size={30}
+                        value={directMessage}
+                        onChange={(e) => setDirectMessage(e.target.value)}
+                        placeholder="Type message..."
+                        className="text-sm"
+                      />
+                      <Button 
+                        variant="default" 
+                        size="sm"
+                        onClick={() => sendDirectMessage(participant.id)}
+                      >
+                        Send
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => setSelectedParticipant(participant.id)}
+                    >
+                      Message
+                    </Button>
+                  )}
+                </div>
               </div>
             ))}
           </div>

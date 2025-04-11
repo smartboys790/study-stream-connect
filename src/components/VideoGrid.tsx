@@ -44,6 +44,7 @@ interface VideoTileProps {
     isMuted: boolean;
     isVideoOff: boolean;
     isScreenSharing: boolean;
+    peerId?: string;
   };
 }
 
@@ -57,15 +58,31 @@ const VideoTile = ({ participant }: VideoTileProps) => {
       // Ensure video plays
       const playVideo = async () => {
         try {
-          await videoRef.current?.play();
+          if (videoRef.current) {
+            videoRef.current.muted = participant.isMuted;
+            await videoRef.current.play();
+          }
         } catch (err) {
           console.error("Error playing video:", err);
+          // Retry after a short delay
+          setTimeout(playVideo, 1000);
         }
       };
       
       playVideo();
     }
-  }, [participant.stream]);
+    
+    // Update when stream changes
+    return () => {
+      if (videoRef.current && videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach(track => {
+          track.stop();
+        });
+        videoRef.current.srcObject = null;
+      }
+    };
+  }, [participant.stream, participant.isMuted]);
 
   const getInitials = (name: string) => {
     return name
@@ -103,6 +120,9 @@ const VideoTile = ({ participant }: VideoTileProps) => {
       <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/70 to-transparent text-white flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">{participant.name}</span>
+          {participant.peerId && (
+            <span className="text-xs opacity-60">(ID: {participant.peerId.substring(0, 6)})</span>
+          )}
         </div>
         <div className="flex items-center gap-1.5">
           {participant.isScreenSharing && (

@@ -75,6 +75,7 @@ const Room = () => {
 
         // Join the WebRTC room
         if (!hasJoined && isAuthorized) {
+          console.log("Attempting to join room:", roomId);
           setHasJoined(true);
           joinRoom(roomId);
         }
