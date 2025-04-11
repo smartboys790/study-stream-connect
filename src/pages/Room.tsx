@@ -22,6 +22,7 @@ const Room = () => {
   const [roomError, setRoomError] = useState<string>("");
   const [isPublicRoom, setIsPublicRoom] = useState(false);
   const [isAuthorized, setIsAuthorized] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(true);
 
   useEffect(() => {
     if (!roomId) return;
@@ -143,6 +144,10 @@ const Room = () => {
     navigate("/dashboard");
   };
 
+  const toggleChat = () => {
+    setIsChatOpen(!isChatOpen);
+  };
+
   if (roomError) {
     return (
       <div className="min-h-screen flex flex-col">
@@ -245,12 +250,14 @@ const Room = () => {
           <div className="flex-1 bg-card rounded-lg border border-border overflow-hidden">
             <VideoGrid />
           </div>
-          <RoomControls onLeaveRoom={handleLeaveRoom} />
+          <RoomControls onLeaveRoom={handleLeaveRoom} toggleChat={toggleChat} isChatOpen={isChatOpen} />
         </div>
         
-        <div className="md:w-80 h-80 md:h-auto">
-          <ChatPanel />
-        </div>
+        {isChatOpen && (
+          <div className="md:w-80 h-80 md:h-auto animate-in slide-in-from-right duration-300">
+            <ChatPanel />
+          </div>
+        )}
       </main>
     </div>
   );

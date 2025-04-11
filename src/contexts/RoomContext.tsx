@@ -135,8 +135,10 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         return;
       }
 
+      const currentParticipantIds = participants.map(p => p.id);
       const roomParticipants = data
         .filter(p => !user || p.user_id !== user.id)
+        .filter(p => !currentParticipantIds.includes(p.user_id))
         .map(p => {
           const userId = p.user_id;
           const email = `user-${userId.substring(0, 8)}@example.com`;
@@ -153,11 +155,7 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         });
 
       if (roomParticipants.length > 0) {
-        setParticipants(prev => {
-          const existingIds = prev.map(p => p.id);
-          const newParticipants = roomParticipants.filter(p => !existingIds.includes(p.id));
-          return [...prev, ...newParticipants];
-        });
+        setParticipants(prev => [...prev, ...roomParticipants]);
       }
     } catch (err) {
       console.error("Error processing participants:", err);
@@ -176,7 +174,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       setIsAudioMuted(false);
       setIsVideoOff(false);
       
-      // Generate a unique guest ID if no user is logged in
       const participantId = user ? user.id : `guest-${Math.random().toString(36).substring(2, 9)}`;
       const participantName = user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`;
       const participantAvatar = user ? user.avatar : `https://avatar.vercel.sh/guest-${participantId}?size=128`;
@@ -226,7 +223,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         setIsAudioMuted(false);
         setIsVideoOff(true);
         
-        // Generate a unique guest ID if no user is logged in
         const participantId = user ? user.id : `guest-${Math.random().toString(36).substring(2, 9)}`;
         const participantName = user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`;
         const participantAvatar = user ? user.avatar : `https://avatar.vercel.sh/guest-${participantId}?size=128`;
@@ -266,7 +262,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       } catch (audioErr) {
         console.error("Error accessing audio devices:", audioErr);
         
-        // Generate a unique guest ID if no user is logged in
         const participantId = user ? user.id : `guest-${Math.random().toString(36).substring(2, 9)}`;
         const participantName = user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`;
         const participantAvatar = user ? user.avatar : `https://avatar.vercel.sh/guest-${participantId}?size=128`;
@@ -311,26 +306,44 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
     if (!roomId) return null;
     
     try {
-      // Generate a unique peer ID - use user ID if logged in, otherwise create a guest ID
       const userId = user ? user.id : `guest-${Math.random().toString(36).substring(2, 9)}`;
       const peerId = `${roomId}-${userId}`;
-      const peer = new Peer(peerId);
+      
+      console.log("Initializing peer with ID:", peerId);
+      
+      const peer = new Peer(peerId, {
+        debug: 3
+      });
       
       peer.on('open', (id) => {
-        console.log('My peer ID is: ' + id);
-        // Update my participant entry with peerId
+        console.log('Peer connection opened with ID:', id);
         const currentId = user ? user.id : userId;
         setParticipants(prev => 
           prev.map(p => 
             p.id === currentId ? { ...p, peerId: id } : p
           )
         );
+        
+        if (roomId && channelRef.current) {
+          channelRef.current.track({
+            user_id: currentId,
+            name: user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`,
+            peerId: id,
+            status: 'online',
+            media_status: {
+              audio: !isAudioMuted,
+              video: !isVideoOff,
+              screen: isScreenSharing
+            }
+          });
+        }
       });
       
       peer.on('call', (call) => {
         console.log('Receiving call from:', call.peer);
         
         if (localStreamRef.current) {
+          console.log('Answering call with local stream');
           call.answer(localStreamRef.current);
           
           call.on('stream', (remoteStream) => {
@@ -338,21 +351,44 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
             const remotePeerId = call.peer;
             const remoteUserId = remotePeerId.split('-')[1];
             
-            setParticipants(prev => 
-              prev.map(p => {
-                if (p.id === remoteUserId) {
-                  return { ...p, stream: remoteStream, peerId: remotePeerId };
-                }
-                return p;
-              })
-            );
+            console.log('Remote user ID:', remoteUserId);
+            
+            setParticipants(prev => {
+              const existingParticipant = prev.find(p => p.id === remoteUserId);
+              
+              if (existingParticipant) {
+                return prev.map(p => {
+                  if (p.id === remoteUserId) {
+                    return { ...p, stream: remoteStream, peerId: remotePeerId };
+                  }
+                  return p;
+                });
+              } else {
+                const newParticipant = {
+                  id: remoteUserId,
+                  name: `User ${remoteUserId.substring(0, 5)}`,
+                  avatar: `https://avatar.vercel.sh/${remoteUserId}?size=128`,
+                  stream: remoteStream,
+                  peerId: remotePeerId,
+                  isMuted: false,
+                  isVideoOff: false,
+                  isScreenSharing: false
+                };
+                
+                console.log('Adding new participant:', newParticipant);
+                return [...prev, newParticipant];
+              }
+            });
+          });
+          
+          call.on('error', (err) => {
+            console.error('Call error:', err);
           });
         } else {
           console.warn('No local stream to answer call with');
           call.answer(); // Answer without a stream
         }
         
-        // Store the call in our connections
         const remotePeerId = call.peer;
         peerConnectionsRef.current.set(remotePeerId, {
           peerId: remotePeerId,
@@ -365,6 +401,11 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         toast.error('Connection error. Please try rejoining the room.');
       });
       
+      peer.on('disconnected', () => {
+        console.log('Peer disconnected');
+        peer.reconnect();
+      });
+      
       peerRef.current = peer;
       return peer;
     } catch (err) {
@@ -375,47 +416,68 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
   };
 
   const connectToPeers = () => {
-    if (!peerRef.current || !localStreamRef.current || !user) return;
+    if (!peerRef.current || !localStreamRef.current) return;
     
-    // Connect to each participant
+    console.log('Attempting to connect to peers:', participants);
+    
     participants.forEach(participant => {
-      if (participant.id === user.id || !participant.peerId) return; // Skip self or participants without peerId
+      if (user && participant.id === user.id) {
+        console.log('Skipping self:', participant.id);
+        return;
+      }
       
-      // Check if we already have a connection to this peer
-      if (peerConnectionsRef.current.has(participant.peerId)) return;
+      if (!participant.peerId) {
+        console.log('Participant has no peerId:', participant.id);
+        return;
+      }
+      
+      if (peerConnectionsRef.current.has(participant.peerId)) {
+        console.log('Already connected to:', participant.peerId);
+        return;
+      }
       
       console.log('Calling peer:', participant.peerId);
       
-      const call = peerRef.current!.call(participant.peerId, localStreamRef.current!);
-      
-      call.on('stream', (remoteStream) => {
-        console.log('Received stream from call to:', participant.peerId);
+      try {
+        const call = peerRef.current!.call(participant.peerId, localStreamRef.current!);
         
-        setParticipants(prev => 
-          prev.map(p => {
-            if (p.id === participant.id) {
-              return { ...p, stream: remoteStream };
-            }
-            return p;
-          })
-        );
-      });
-      
-      // Store the call
-      peerConnectionsRef.current.set(participant.peerId, {
-        peerId: participant.peerId,
-        call
-      });
+        call.on('stream', (remoteStream) => {
+          console.log('Received stream from call to:', participant.peerId);
+          
+          setParticipants(prev => 
+            prev.map(p => {
+              if (p.id === participant.id) {
+                return { ...p, stream: remoteStream };
+              }
+              return p;
+            })
+          );
+        });
+        
+        call.on('error', (err) => {
+          console.error('Call error:', err);
+        });
+        
+        peerConnectionsRef.current.set(participant.peerId, {
+          peerId: participant.peerId,
+          call
+        });
+      } catch (err) {
+        console.error('Error calling peer:', participant.peerId, err);
+      }
     });
   };
 
   const setupRealTimePresence = (roomId: string) => {
-    if (!roomId || !user) return;
+    if (!roomId) return;
 
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
     }
 
+    console.log('Setting up real-time presence for room:', roomId);
+    
+    const userId = user ? user.id : `guest-${Math.random().toString(36).substring(2, 9)}`;
     const channel = supabase.channel(`room:${roomId}`);
 
     channel
@@ -423,37 +485,76 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         const state = channel.presenceState();
         console.log('Presence sync state:', state);
         
-        // Extract peer IDs from presence state
         Object.values(state).forEach((presences: any) => {
           presences.forEach((presence: any) => {
-            if (presence.peerId && presence.user_id !== user.id) {
-              // Update participant with peer ID
-              setParticipants(prev => 
-                prev.map(p => 
-                  p.id === presence.user_id ? { ...p, peerId: presence.peerId } : p
-                )
-              );
+            if (presence.peerId && presence.user_id !== userId) {
+              console.log('Updating participant with peer ID:', presence);
+              setParticipants(prev => {
+                const existingParticipant = prev.find(p => p.id === presence.user_id);
+                
+                if (existingParticipant) {
+                  return prev.map(p => 
+                    p.id === presence.user_id ? { 
+                      ...p, 
+                      peerId: presence.peerId,
+                      name: presence.name || p.name,
+                      isMuted: presence.media_status ? !presence.media_status.audio : p.isMuted,
+                      isVideoOff: presence.media_status ? !presence.media_status.video : p.isVideoOff,
+                      isScreenSharing: presence.media_status ? presence.media_status.screen : p.isScreenSharing
+                    } : p
+                  );
+                } else {
+                  return [...prev, {
+                    id: presence.user_id,
+                    name: presence.name || `User ${presence.user_id.substring(0, 5)}`,
+                    avatar: `https://avatar.vercel.sh/${presence.user_id}?size=128`,
+                    peerId: presence.peerId,
+                    isMuted: presence.media_status ? !presence.media_status.audio : false,
+                    isVideoOff: presence.media_status ? !presence.media_status.video : false,
+                    isScreenSharing: presence.media_status ? presence.media_status.screen : false
+                  }];
+                }
+              });
             }
           });
         });
         
-        // Try to connect to peers after we have their peer IDs
-        connectToPeers();
+        setTimeout(connectToPeers, 1000);
       })
       .on('presence', { event: 'join' }, ({ key, newPresences }) => {
         console.log('User joined:', key, newPresences);
         
-        // Extract peer IDs from new presences
         newPresences.forEach((presence: any) => {
-          if (presence.peerId && presence.user_id !== user.id) {
-            // Update participant with peer ID
-            setParticipants(prev => 
-              prev.map(p => 
-                p.id === presence.user_id ? { ...p, peerId: presence.peerId } : p
-              )
-            );
+          if (presence.peerId && presence.user_id !== userId) {
+            console.log('New user joined with peer ID:', presence);
             
-            // Try to connect to this new peer
+            setParticipants(prev => {
+              const existingParticipant = prev.find(p => p.id === presence.user_id);
+              
+              if (existingParticipant) {
+                return prev.map(p => 
+                  p.id === presence.user_id ? { 
+                    ...p, 
+                    peerId: presence.peerId,
+                    name: presence.name || p.name,
+                    isMuted: presence.media_status ? !presence.media_status.audio : p.isMuted,
+                    isVideoOff: presence.media_status ? !presence.media_status.video : p.isVideoOff,
+                    isScreenSharing: presence.media_status ? presence.media_status.screen : p.isScreenSharing
+                  } : p
+                );
+              } else {
+                return [...prev, {
+                  id: presence.user_id,
+                  name: presence.name || `User ${presence.user_id.substring(0, 5)}`,
+                  avatar: `https://avatar.vercel.sh/${presence.user_id}?size=128`,
+                  peerId: presence.peerId,
+                  isMuted: presence.media_status ? !presence.media_status.audio : false,
+                  isVideoOff: presence.media_status ? !presence.media_status.video : false,
+                  isScreenSharing: presence.media_status ? presence.media_status.screen : false
+                }];
+              }
+            });
+            
             setTimeout(connectToPeers, 1000);
           }
         });
@@ -463,10 +564,8 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         
         const leftIds = leftPresences.map((p: any) => p.user_id);
         if (leftIds.length > 0) {
-          // Remove participants who left
           setParticipants(prev => prev.filter(p => !leftIds.includes(p.id)));
           
-          // Close and remove peer connections
           leftPresences.forEach((presence: any) => {
             if (presence.peerId) {
               const connection = peerConnectionsRef.current.get(presence.peerId);
@@ -481,11 +580,12 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
 
     channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
+        console.log('Subscribed to presence channel');
         const peer = peerRef.current;
         
         await channel.track({
-          user_id: user.id,
-          name: user.name,
+          user_id: userId,
+          name: user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`,
           peerId: peer ? peer.id : undefined,
           status: 'online',
           media_status: {
@@ -501,8 +601,9 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
   };
 
   const setupChatChannel = (roomId: string) => {
-    if (!roomId || !user) return;
+    if (!roomId) return;
 
+    const userId = user ? user.id : `guest-${Math.random().toString(36).substring(2, 9)}`;
     const chatChannel = supabase.channel(`chat:${roomId}`);
 
     chatChannel
@@ -510,7 +611,7 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         if (payload.payload && payload.payload.message) {
           const msg = payload.payload.message;
           
-          if (msg.senderId !== user.id) {
+          if (msg.senderId !== userId) {
             setChatMessages(prev => [...prev, {
               id: msg.id,
               senderId: msg.senderId,
@@ -537,22 +638,18 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
     try {
       setIsJoining(true);
       
-      // Initialize media stream
+      console.log('Joining room:', id);
+      
       const stream = await initLocalStream();
       
-      // Set room ID
       setRoomId(id);
       
-      // Fetch existing participants
       await fetchRoomParticipants(id);
       
-      // Initialize WebRTC peer
       initializePeer();
       
-      // Setup presence channel for signaling
       setupRealTimePresence(id);
       
-      // Setup chat channel
       setupChatChannel(id);
       
       setChatMessages([
@@ -576,7 +673,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
   };
 
   const leaveRoom = () => {
-    // Stop and clear local media streams
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => track.stop());
       localStreamRef.current = null;
@@ -587,7 +683,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       screenShareStreamRef.current = null;
     }
     
-    // Close peer connections
     if (peerRef.current) {
       peerRef.current.destroy();
       peerRef.current = null;
@@ -598,13 +693,11 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
     });
     peerConnectionsRef.current.clear();
     
-    // Close Supabase channels
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;
     }
     
-    // Reset state
     setLocalStream(null);
     setIsScreenSharing(false);
     setRoomId(null);
@@ -614,14 +707,17 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
   };
 
   const sendChatMessage = (text: string) => {
-    if (!user || !roomId) return;
+    if (!roomId) return;
+    
+    const userId = user ? user.id : `guest-${Math.random().toString(36).substring(2, 9)}`;
+    const userName = user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`;
     
     const messageId = `msg-${crypto.randomUUID()}`;
     
     const newMessage: ChatMessage = {
       id: messageId,
-      senderId: user.id,
-      senderName: user.name,
+      senderId: userId,
+      senderName: userName,
       text,
       timestamp: new Date()
     };
@@ -635,8 +731,8 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       payload: {
         message: {
           id: messageId,
-          senderId: user.id,
-          senderName: user.name,
+          senderId: userId,
+          senderName: userName,
           text,
           timestamp: new Date().toISOString()
         }
@@ -663,26 +759,26 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
     
     setIsAudioMuted(newMuteState);
     
-    if (user) {
-      setParticipants(prev => 
-        prev.map(p => 
-          p.id === user.id ? { ...p, isMuted: newMuteState } : p
-        )
-      );
-      
-      if (roomId && channelRef.current) {
-        channelRef.current.track({
-          user_id: user.id,
-          name: user.name,
-          peerId: peerRef.current?.id,
-          status: 'online',
-          media_status: {
-            audio: !newMuteState,
-            video: !isVideoOff,
-            screen: isScreenSharing
-          }
-        });
-      }
+    const userId = user ? user.id : `guest-${Math.random().toString(36).substring(2, 9)}`;
+    
+    setParticipants(prev => 
+      prev.map(p => 
+        p.id === userId ? { ...p, isMuted: newMuteState } : p
+      )
+    );
+    
+    if (roomId && channelRef.current) {
+      channelRef.current.track({
+        user_id: userId,
+        name: user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`,
+        peerId: peerRef.current?.id,
+        status: 'online',
+        media_status: {
+          audio: !newMuteState,
+          video: !isVideoOff,
+          screen: isScreenSharing
+        }
+      });
     }
     
     toast.info(newMuteState ? "Microphone muted" : "Microphone unmuted");
@@ -707,35 +803,35 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
     
     setIsVideoOff(newVideoOffState);
     
-    if (user) {
-      setParticipants(prev => 
-        prev.map(p => 
-          p.id === user.id ? { ...p, isVideoOff: newVideoOffState } : p
-        )
-      );
-      
-      if (roomId && channelRef.current) {
-        channelRef.current.track({
-          user_id: user.id,
-          name: user.name,
-          peerId: peerRef.current?.id,
-          status: 'online',
-          media_status: {
-            audio: !isAudioMuted,
-            video: !newVideoOffState,
-            screen: isScreenSharing
-          }
-        });
-      }
+    const userId = user ? user.id : `guest-${Math.random().toString(36).substring(2, 9)}`;
+    
+    setParticipants(prev => 
+      prev.map(p => 
+        p.id === userId ? { ...p, isVideoOff: newVideoOffState } : p
+      )
+    );
+    
+    if (roomId && channelRef.current) {
+      channelRef.current.track({
+        user_id: userId,
+        name: user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`,
+        peerId: peerRef.current?.id,
+        status: 'online',
+        media_status: {
+          audio: !isAudioMuted,
+          video: !newVideoOffState,
+          screen: isScreenSharing
+        }
+      });
     }
     
     toast.info(newVideoOffState ? "Camera turned off" : "Camera turned on");
   };
 
   const toggleScreenShare = async () => {
-    if (!user) return;
-    
     try {
+      const userId = user ? user.id : `guest-${Math.random().toString(36).substring(2, 9)}`;
+      
       if (isScreenSharing) {
         if (screenShareStreamRef.current) {
           screenShareStreamRef.current.getTracks().forEach(track => track.stop());
@@ -745,12 +841,9 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         if (localStreamRef.current) {
           setLocalStream(localStreamRef.current);
           
-          // Reconnect with camera stream
           peerConnectionsRef.current.forEach(connection => {
-            // Close existing connection
             connection.call.close();
             
-            // Create a new call with camera stream
             if (peerRef.current && localStreamRef.current) {
               const newCall = peerRef.current.call(connection.peerId, localStreamRef.current);
               
@@ -768,7 +861,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
                 );
               });
               
-              // Update the stored call
               peerConnectionsRef.current.set(connection.peerId, {
                 peerId: connection.peerId,
                 call: newCall
@@ -781,14 +873,14 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         
         setParticipants(prev => 
           prev.map(p => 
-            p.id === user.id ? { ...p, isScreenSharing: false } : p
+            p.id === userId ? { ...p, isScreenSharing: false } : p
           )
         );
         
         if (roomId && channelRef.current) {
           channelRef.current.track({
-            user_id: user.id,
-            name: user.name,
+            user_id: userId,
+            name: user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`,
             peerId: peerRef.current?.id,
             status: 'online',
             media_status: {
@@ -810,12 +902,9 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
           setLocalStream(screenStream);
           setIsScreenSharing(true);
           
-          // Reconnect with screen share stream
           peerConnectionsRef.current.forEach(connection => {
-            // Close existing connection
             connection.call.close();
             
-            // Create a new call with screen stream
             if (peerRef.current) {
               const newCall = peerRef.current.call(connection.peerId, screenStream);
               
@@ -833,7 +922,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
                 );
               });
               
-              // Update the stored call
               peerConnectionsRef.current.set(connection.peerId, {
                 peerId: connection.peerId,
                 call: newCall
@@ -842,16 +930,12 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
           });
           
           screenStream.getVideoTracks()[0].onended = () => {
-            // Handle the case when the user stops sharing via the browser UI
             if (localStreamRef.current) {
               setLocalStream(localStreamRef.current);
               
-              // Reconnect with camera stream
               peerConnectionsRef.current.forEach(connection => {
-                // Close existing connection
                 connection.call.close();
                 
-                // Create a new call with camera stream
                 if (peerRef.current && localStreamRef.current) {
                   const newCall = peerRef.current.call(connection.peerId, localStreamRef.current);
                   
@@ -869,7 +953,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
                     );
                   });
                   
-                  // Update the stored call
                   peerConnectionsRef.current.set(connection.peerId, {
                     peerId: connection.peerId,
                     call: newCall
@@ -882,14 +965,14 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
             
             setParticipants(prev => 
               prev.map(p => 
-                p.id === user.id ? { ...p, isScreenSharing: false } : p
+                p.id === userId ? { ...p, isScreenSharing: false } : p
               )
             );
             
             if (roomId && channelRef.current) {
               channelRef.current.track({
-                user_id: user.id,
-                name: user.name,
+                user_id: userId,
+                name: user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`,
                 peerId: peerRef.current?.id,
                 status: 'online',
                 media_status: {
@@ -905,14 +988,14 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
           
           setParticipants(prev => 
             prev.map(p => 
-              p.id === user.id ? { ...p, isScreenSharing: true } : p
+              p.id === userId ? { ...p, isScreenSharing: true } : p
             )
           );
           
           if (roomId && channelRef.current) {
             channelRef.current.track({
-              user_id: user.id,
-              name: user.name,
+              user_id: userId,
+              name: user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`,
               peerId: peerRef.current?.id,
               status: 'online',
               media_status: {
