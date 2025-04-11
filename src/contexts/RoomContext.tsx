@@ -485,40 +485,50 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         const state = channel.presenceState();
         console.log('Presence sync state:', state);
         
-        Object.values(state).forEach((presences: any) => {
+        const newParticipants: Participant[] = [];
+        const currentParticipantIds = new Set<string>();
+        
+        // First collect all current participants
+        participants.forEach(p => {
+          currentParticipantIds.add(p.id);
+        });
+        
+        // Process presence state
+        Object.entries(state).forEach(([key, presences]: [string, any]) => {
           presences.forEach((presence: any) => {
-            if (presence.peerId && presence.user_id !== userId) {
-              console.log('Updating participant with peer ID:', presence);
-              setParticipants(prev => {
-                const existingParticipant = prev.find(p => p.id === presence.user_id);
-                
-                if (existingParticipant) {
-                  return prev.map(p => 
-                    p.id === presence.user_id ? { 
-                      ...p, 
-                      peerId: presence.peerId,
-                      name: presence.name || p.name,
-                      isMuted: presence.media_status ? !presence.media_status.audio : p.isMuted,
-                      isVideoOff: presence.media_status ? !presence.media_status.video : p.isVideoOff,
-                      isScreenSharing: presence.media_status ? presence.media_status.screen : p.isScreenSharing
-                    } : p
-                  );
-                } else {
-                  return [...prev, {
-                    id: presence.user_id,
-                    name: presence.name || `User ${presence.user_id.substring(0, 5)}`,
-                    avatar: `https://avatar.vercel.sh/${presence.user_id}?size=128`,
-                    peerId: presence.peerId,
-                    isMuted: presence.media_status ? !presence.media_status.audio : false,
-                    isVideoOff: presence.media_status ? !presence.media_status.video : false,
-                    isScreenSharing: presence.media_status ? presence.media_status.screen : false
-                  }];
-                }
-              });
+            if (presence.user_id && presence.user_id !== userId) {
+              const existingParticipant = participants.find(p => p.id === presence.user_id);
+              
+              if (existingParticipant) {
+                newParticipants.push({
+                  ...existingParticipant,
+                  peerId: presence.peerId || existingParticipant.peerId,
+                  name: presence.name || existingParticipant.name,
+                  isMuted: presence.media_status ? !presence.media_status.audio : existingParticipant.isMuted,
+                  isVideoOff: presence.media_status ? !presence.media_status.video : existingParticipant.isVideoOff,
+                  isScreenSharing: presence.media_status ? presence.media_status.screen : existingParticipant.isScreenSharing
+                });
+              } else {
+                newParticipants.push({
+                  id: presence.user_id,
+                  name: presence.name || `User ${presence.user_id.substring(0, 5)}`,
+                  avatar: `https://avatar.vercel.sh/${presence.user_id}?size=128`,
+                  peerId: presence.peerId,
+                  isMuted: presence.media_status ? !presence.media_status.audio : false,
+                  isVideoOff: presence.media_status ? !presence.media_status.video : false,
+                  isScreenSharing: presence.media_status ? presence.media_status.screen : false
+                });
+              }
+              
+              currentParticipantIds.delete(presence.user_id);
             }
           });
         });
         
+        // Remove participants that are no longer present
+        const filteredParticipants = newParticipants.filter(p => !currentParticipantIds.has(p.id));
+        
+        setParticipants(filteredParticipants);
         setTimeout(connectToPeers, 1000);
       })
       .on('presence', { event: 'join' }, ({ key, newPresences }) => {

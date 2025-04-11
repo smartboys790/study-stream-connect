@@ -1,6 +1,5 @@
-
-import { Button } from "@/components/ui/button";
-import { useRoom } from "@/contexts/RoomContext";
+import { Button } from "./ui/button";
+import { useRoom } from "../contexts/RoomContext";
 import {
   Mic,
   MicOff,
@@ -15,13 +14,13 @@ import {
   ChevronRight,
   ChevronLeft,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "./ui/badge";
 import { toast } from "sonner";
 import { useParams } from "react-router-dom";
 import { useState } from "react";
-import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Input } from "@/components/ui/input";
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "./ui/drawer";
+import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
+import { Input } from "./ui/input";
 
 interface RoomControlsProps {
   onLeaveRoom?: () => void;
@@ -48,13 +47,8 @@ const RoomControls = ({ onLeaveRoom, toggleChat, isChatOpen }: RoomControlsProps
   const [selectedParticipant, setSelectedParticipant] = useState<string | null>(null);
 
   const handleLeaveRoom = () => {
-    // Turn off camera and mic before leaving
-    if (!isAudioMuted) {
-      toggleAudio();
-    }
-    if (!isVideoOff) {
-      toggleVideo();
-    }
+    if (!isAudioMuted) toggleAudio();
+    if (!isVideoOff) toggleVideo();
     
     if (onLeaveRoom) {
       onLeaveRoom();
@@ -66,12 +60,8 @@ const RoomControls = ({ onLeaveRoom, toggleChat, isChatOpen }: RoomControlsProps
   const copyRoomIdToClipboard = () => {
     if (roomId) {
       navigator.clipboard.writeText(roomId)
-        .then(() => {
-          toast.success("Room ID copied to clipboard");
-        })
-        .catch(() => {
-          toast.error("Failed to copy room ID");
-        });
+        .then(() => toast.success("Room ID copied to clipboard"))
+        .catch(() => toast.error("Failed to copy room ID"));
     }
   };
 
@@ -80,16 +70,11 @@ const RoomControls = ({ onLeaveRoom, toggleChat, isChatOpen }: RoomControlsProps
   };
 
   const getInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map((part) => part[0])
-      .join("")
-      .toUpperCase();
+    return name.split(" ").map(part => part[0]).join("").toUpperCase();
   };
 
   const sendDirectMessage = (participantId: string) => {
     if (directMessage.trim()) {
-      // Add @ mention to direct message
       const messageWithMention = `@${participants.find(p => p.id === participantId)?.name}: ${directMessage}`;
       sendChatMessage(messageWithMention);
       setDirectMessage("");

@@ -1,10 +1,9 @@
-
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useRoom } from "@/contexts/RoomContext";
 import { useAuth } from "@/contexts/AuthContext";
 import Header from "@/components/Header";
-import VideoGrid from "@/components/VideoGrid";
+import { ZoomVideoGrid } from "@/components/ZoomVideoGrid";
 import ChatPanel from "@/components/ChatPanel";
 import RoomControls from "@/components/RoomControls";
 import { Button } from "@/components/ui/button";
@@ -12,7 +11,7 @@ import { ArrowLeft, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
-const Room = () => {
+const RoomNew = () => {
   const { roomId } = useParams<{ roomId: string }>();
   const { user, isAuthenticated } = useAuth();
   const { joinRoom, leaveRoom, participants, isJoining } = useRoom();
@@ -29,7 +28,6 @@ const Room = () => {
 
     const checkRoomAccess = async () => {
       try {
-        // Check if the room exists and if it's public
         const { data: roomData, error: roomError } = await supabase
           .from('rooms')
           .select('name, is_public')
@@ -37,7 +35,6 @@ const Room = () => {
           .single();
 
         if (roomError || !roomData) {
-          console.error("Room error:", roomError);
           setRoomError("Room not found or inaccessible");
           return;
         }
@@ -45,7 +42,6 @@ const Room = () => {
         setRoomName(roomData.name);
         setIsPublicRoom(roomData.is_public);
 
-        // Determine if user is authorized to access this room
         if (roomData.is_public) {
           setIsAuthorized(true);
         } else if (isAuthenticated) {
@@ -55,7 +51,6 @@ const Room = () => {
           return;
         }
 
-        // Register user as participant if authenticated
         if (user) {
           const { error: participantError } = await supabase
             .from('room_participants')
@@ -68,19 +63,15 @@ const Room = () => {
             });
 
           if (participantError) {
-            console.error("Error joining room:", participantError);
             toast.error("Failed to join room as participant");
           }
         }
 
-        // Join the WebRTC room
         if (!hasJoined && isAuthorized) {
-          console.log("Attempting to join room:", roomId);
           setHasJoined(true);
           joinRoom(roomId);
         }
       } catch (err) {
-        console.error("Error checking room access:", err);
         setRoomError("Error checking room access");
       }
     };
@@ -88,26 +79,19 @@ const Room = () => {
     checkRoomAccess();
 
     return () => {
-      // Cleanup when unmounting
       if (hasJoined && roomId && user) {
-        // Update the participant's active status to false
         supabase
           .from('room_participants')
           .update({ is_active: false })
           .eq('room_id', roomId)
-          .eq('user_id', user.id)
-          .then(({ error }) => {
-            if (error) console.error("Error updating participant status:", error);
-          });
+          .eq('user_id', user.id);
       }
     };
   }, [roomId, isAuthenticated, user, hasJoined, joinRoom, isAuthorized]);
 
-  // Set up real-time subscription to room participants
   useEffect(() => {
     if (!roomId) return;
 
-    // Subscribe to changes in the room_participants table
     const channel = supabase
       .channel('room_participants_changes')
       .on('postgres_changes', {
@@ -125,10 +109,8 @@ const Room = () => {
     };
   }, [roomId]);
 
-  // Handle manual leaving
   const handleLeaveRoom = async () => {
     if (user && roomId) {
-      // Update participant status in database
       const { error } = await supabase
         .from('room_participants')
         .update({ is_active: false })
@@ -136,7 +118,6 @@ const Room = () => {
         .eq('user_id', user.id);
 
       if (error) {
-        console.error("Error leaving room:", error);
         toast.error("Error updating room status");
       }
     }
@@ -249,7 +230,7 @@ const Room = () => {
       <main className="flex-1 flex flex-col md:flex-row gap-4 p-4">
         <div className="flex-1 flex flex-col min-h-[400px] md:min-h-0">
           <div className="flex-1 bg-card rounded-lg border border-border overflow-hidden">
-            <VideoGrid />
+            <ZoomVideoGrid />
           </div>
           <RoomControls onLeaveRoom={handleLeaveRoom} toggleChat={toggleChat} isChatOpen={isChatOpen} />
         </div>
@@ -264,4 +245,4 @@ const Room = () => {
   );
 };
 
-export default Room;
+export default RoomNew;

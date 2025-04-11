@@ -1,36 +1,37 @@
-
 import { useRef, useEffect } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useRoom } from "@/contexts/RoomContext";
-import { Mic, MicOff, Monitor, Video, VideoOff } from "lucide-react";
+import { Mic, MicOff, Video, VideoOff } from "lucide-react";
 
 const VideoGrid = () => {
-  const { participants } = useRoom();
+  const { participants, localParticipant } = useRoom();
 
-  // Determine the grid layout based on number of participants
+  // Zoom-style grid layout
   const getGridClass = () => {
-    const count = participants.length;
-    if (count === 0) return "grid-cols-1";
-    if (count === 1) return "grid-cols-1";
-    if (count === 2) return "grid-cols-1 md:grid-cols-2";
-    if (count === 3 || count === 4) return "grid-cols-1 md:grid-cols-2";
-    return "grid-cols-1 md:grid-cols-2 lg:grid-cols-3";
+    const count = participants.length + 1; // +1 for local participant
+    if (count <= 1) return "grid-cols-1";
+    if (count === 2) return "grid-cols-2";
+    if (count <= 4) return "grid-cols-2";
+    if (count <= 9) return "grid-cols-3";
+    return "grid-cols-4";
   };
 
   return (
     <div className={`grid ${getGridClass()} gap-4 p-4 w-full h-full`}>
-      {participants.length === 0 ? (
-        <div className="col-span-full flex items-center justify-center h-full">
-          <div className="text-center p-6">
-            <p className="text-lg text-muted-foreground">No participants yet</p>
-            <p className="text-sm text-muted-foreground">Waiting for others to join...</p>
-          </div>
-        </div>
-      ) : (
-        participants.map((participant) => (
-          <VideoTile key={participant.id} participant={participant} />
-        ))
-      )}
+      {/* Local participant (self view) */}
+      <VideoTile 
+        participant={localParticipant} 
+        isSelfView 
+        className="border-2 border-primary"
+      />
+
+      {/* Remote participants */}
+      {participants.map((participant) => (
+        <VideoTile 
+          key={participant.id} 
+          participant={participant}
+        />
+      ))}
     </div>
   );
 };
@@ -43,73 +44,52 @@ interface VideoTileProps {
     stream?: MediaStream;
     isMuted: boolean;
     isVideoOff: boolean;
-    isScreenSharing: boolean;
-    peerId?: string;
   };
+  isSelfView?: boolean;
+  className?: string;
 }
 
-const VideoTile = ({ participant }: VideoTileProps) => {
+const VideoTile = ({ participant, isSelfView, className = "" }: VideoTileProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    if (videoRef.current && participant.stream) {
-      videoRef.current.srcObject = participant.stream;
-      
-      // Ensure video plays
-      const playVideo = async () => {
-        try {
-          if (videoRef.current) {
-            videoRef.current.muted = participant.isMuted;
-            await videoRef.current.play();
-          }
-        } catch (err) {
-          console.error("Error playing video:", err);
-          // Retry after a short delay
-          setTimeout(playVideo, 1000);
-        }
-      };
-      
-      playVideo();
-    }
-    
-    // Update when stream changes
+    if (!videoRef.current || !participant.stream) return;
+
+    const video = videoRef.current;
+    video.srcObject = participant.stream;
+    video.muted = isSelfView; // Always mute self view
+
+    video.play().catch(err => {
+      console.warn("Video playback error:", err);
+    });
+
     return () => {
-      if (videoRef.current && videoRef.current.srcObject) {
-        const stream = videoRef.current.srcObject as MediaStream;
-        stream.getTracks().forEach(track => {
-          track.stop();
-        });
-        videoRef.current.srcObject = null;
+      if (video.srcObject) {
+        const tracks = (video.srcObject as MediaStream).getTracks();
+        tracks.forEach(track => track.stop());
       }
     };
-  }, [participant.stream, participant.isMuted]);
+  }, [participant.stream, isSelfView]);
 
   const getInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map((part) => part[0])
-      .join("")
-      .toUpperCase();
+    return name.split(" ").map(n => n[0]).join("").toUpperCase();
   };
 
-  const hasVideoStream = participant.stream && 
-    participant.stream.getVideoTracks().length > 0 && 
-    !participant.isVideoOff;
+  const hasVideo = participant.stream?.getVideoTracks().length > 0 && !participant.isVideoOff;
 
   return (
-    <div className="relative aspect-video rounded-lg overflow-hidden border border-border bg-card shadow-sm flex items-center justify-center">
-      {hasVideoStream ? (
+    <div className={`relative aspect-video rounded-lg overflow-hidden bg-gray-800 ${className}`}>
+      {hasVideo ? (
         <video
           ref={videoRef}
           autoPlay
           playsInline
-          muted={participant.isMuted}
           className="w-full h-full object-cover"
         />
       ) : (
-        <div className="absolute inset-0 flex items-center justify-center bg-secondary">
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-700">
           <Avatar className="h-24 w-24">
-            <AvatarImage src={participant.avatar} alt={participant.name} />
+            <AvatarImage src={participant.avatar} />
             <AvatarFallback className="text-2xl">
               {getInitials(participant.name)}
             </AvatarFallback>
@@ -117,40 +97,18 @@ const VideoTile = ({ participant }: VideoTileProps) => {
         </div>
       )}
 
-      <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/70 to-transparent text-white flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">{participant.name}</span>
-          {participant.peerId && (
-            <span className="text-xs opacity-60">(ID: {participant.peerId.substring(0, 6)})</span>
-          )}
-        </div>
-        <div className="flex items-center gap-1.5">
-          {participant.isScreenSharing && (
-            <div className="p-1 rounded-full bg-blue-500/70">
-              <Monitor size={14} />
+      <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/80 to-transparent text-white">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium">
+            {participant.name} {isSelfView && "(You)"}
+          </span>
+          <div className="flex gap-2">
+            <div className={`p-1 rounded-full ${participant.isVideoOff ? "bg-red-500" : "bg-green-500"}`}>
+              {participant.isVideoOff ? <VideoOff size={14} /> : <Video size={14} />}
             </div>
-          )}
-          <div
-            className={`p-1 rounded-full ${
-              participant.isVideoOff ? "bg-red-500/70" : "bg-green-500/70"
-            }`}
-          >
-            {participant.isVideoOff ? (
-              <VideoOff size={14} />
-            ) : (
-              <Video size={14} />
-            )}
-          </div>
-          <div
-            className={`p-1 rounded-full ${
-              participant.isMuted ? "bg-red-500/70" : "bg-green-500/70"
-            }`}
-          >
-            {participant.isMuted ? (
-              <MicOff size={14} />
-            ) : (
-              <Mic size={14} />
-            )}
+            <div className={`p-1 rounded-full ${participant.isMuted ? "bg-red-500" : "bg-green-500"}`}>
+              {participant.isMuted ? <MicOff size={14} /> : <Mic size={14} />}
+            </div>
           </div>
         </div>
       </div>
