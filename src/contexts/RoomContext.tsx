@@ -37,7 +37,6 @@ interface RoomContextType {
   isAudioMuted: boolean;
   isVideoOff: boolean;
   isScreenSharing: boolean;
-  localParticipant: Participant;
   createRoom: () => Promise<string>;
   joinRoom: (roomId: string) => Promise<void>;
   leaveRoom: () => void;
@@ -80,20 +79,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
   const peerRef = useRef<Peer | null>(null);
   const peerConnectionsRef = useRef<Map<string, PeerConnection>>(new Map());
 
-  const userId = user ? user.id : `guest-${Math.random().toString(36).substring(2, 9)}`;
-  const userName = user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`;
-  const userAvatar = user ? user.avatar : `https://avatar.vercel.sh/guest-${userId}?size=128`;
-  
-  const [localParticipant, setLocalParticipant] = useState<Participant>({
-    id: userId,
-    name: userName,
-    avatar: userAvatar,
-    stream: null,
-    isMuted: isAudioMuted,
-    isVideoOff: isVideoOff,
-    isScreenSharing: isScreenSharing
-  });
-
   useEffect(() => {
     return () => {
       if (localStreamRef.current) {
@@ -107,6 +92,7 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         supabase.removeChannel(channelRef.current);
       }
 
+      // Close all peer connections
       if (peerRef.current) {
         peerRef.current.destroy();
       }
@@ -320,6 +306,7 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
     if (!roomId) return null;
     
     try {
+      const userId = user ? user.id : `guest-${Math.random().toString(36).substring(2, 9)}`;
       const peerId = `${roomId}-${userId}`;
       
       console.log("Initializing peer with ID:", peerId);
@@ -1051,7 +1038,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         isAudioMuted,
         isVideoOff,
         isScreenSharing,
-        localParticipant,
         createRoom,
         joinRoom,
         leaveRoom,
