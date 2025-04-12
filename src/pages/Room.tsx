@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useRoom } from "@/contexts/RoomContext";
 import { useAuth } from "@/contexts/AuthContext";
 import Header from "@/components/Header";
-import { ZoomVideoGrid } from "@/components/ZoomVideoGrid";
+import VideoGrid from "@/components/VideoGridNew";
 import ChatPanel from "@/components/ChatPanel";
 import RoomControls from "@/components/RoomControls";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import { ArrowLeft, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
-const RoomNew = () => {
+const Room = () => {
   const { roomId } = useParams<{ roomId: string }>();
   const { user, isAuthenticated } = useAuth();
   const { joinRoom, leaveRoom, participants, isJoining } = useRoom();
@@ -230,7 +230,7 @@ const RoomNew = () => {
       <main className="flex-1 flex flex-col md:flex-row gap-4 p-4">
         <div className="flex-1 flex flex-col min-h-[400px] md:min-h-0">
           <div className="flex-1 bg-card rounded-lg border border-border overflow-hidden">
-            <ZoomVideoGrid />
+            <VideoGrid />
           </div>
           <RoomControls onLeaveRoom={handleLeaveRoom} toggleChat={toggleChat} isChatOpen={isChatOpen} />
         </div>
@@ -245,4 +245,4 @@ const RoomNew = () => {
   );
 };
 
-export default RoomNew;
+export default Room;

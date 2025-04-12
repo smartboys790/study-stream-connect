@@ -1,3 +1,4 @@
+
 import { Button } from "./ui/button";
 import { useRoom } from "../contexts/RoomContext";
 import {
@@ -47,8 +48,10 @@ const RoomControls = ({ onLeaveRoom, toggleChat, isChatOpen }: RoomControlsProps
   const [selectedParticipant, setSelectedParticipant] = useState<string | null>(null);
 
   const handleLeaveRoom = () => {
+    // Make sure to turn off camera and microphone
     if (!isAudioMuted) toggleAudio();
     if (!isVideoOff) toggleVideo();
+    if (isScreenSharing) toggleScreenShare();
     
     if (onLeaveRoom) {
       onLeaveRoom();
@@ -143,7 +146,7 @@ const RoomControls = ({ onLeaveRoom, toggleChat, isChatOpen }: RoomControlsProps
           </Button>
 
           <Button
-            variant="outline"
+            variant={isChatOpen ? "secondary" : "outline"}
             size="icon"
             onClick={toggleChat}
             className="rounded-full h-10 w-10"

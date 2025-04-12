@@ -1,7 +1,8 @@
-import { useRef, useEffect } from 'react';
+
+import { useRef, useEffect, useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useRoom } from '@/contexts/RoomContext';
-import { Mic, MicOff, Video, VideoOff } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, MonitorSmartphone } from 'lucide-react';
 
 interface Participant {
   id: string;
@@ -10,52 +11,104 @@ interface Participant {
   stream?: MediaStream;
   isMuted: boolean;
   isVideoOff: boolean;
+  isScreenSharing: boolean;
+  peerId?: string;
 }
 
 const VideoTile = ({ 
   participant,
   isSelfView = false,
-  className = ''
+  className = '',
+  isLarge = false
 }: {
   participant: Participant;
   isSelfView?: boolean;
   className?: string;
+  isLarge?: boolean;
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [videoLoaded, setVideoLoaded] = useState(false);
+  const [videoError, setVideoError] = useState(false);
 
   useEffect(() => {
-    if (!videoRef.current || !participant.stream) return;
+    if (!videoRef.current || !participant.stream) {
+      setVideoLoaded(false);
+      return;
+    }
 
     const video = videoRef.current;
-    video.srcObject = participant.stream;
-    video.muted = isSelfView;
+    
+    try {
+      video.srcObject = participant.stream;
+      video.muted = isSelfView;
+      
+      const handlePlay = () => {
+        console.log(`Video playing for ${participant.name}`);
+        setVideoLoaded(true);
+        setVideoError(false);
+      };
+      
+      const handleError = (err: Event) => {
+        console.error(`Video playback error for ${participant.name}:`, err);
+        setVideoError(true);
+        setVideoLoaded(false);
+      };
+      
+      video.addEventListener('playing', handlePlay);
+      video.addEventListener('error', handleError);
+      
+      video.play().catch(err => {
+        console.warn(`Initial play failed for ${participant.name}:`, err);
+        // Auto-retry play on user interaction
+        document.addEventListener('click', function playOnClick() {
+          video.play().catch(console.error);
+          document.removeEventListener('click', playOnClick);
+        }, { once: true });
+      });
 
-    video.play().catch(err => {
-      console.error('Video playback error:', err);
-    });
-
-    return () => {
-      if (video.srcObject) {
-        const tracks = (video.srcObject as MediaStream).getTracks();
-        tracks.forEach(track => track.stop());
-      }
-    };
-  }, [participant.stream, isSelfView]);
+      return () => {
+        video.removeEventListener('playing', handlePlay);
+        video.removeEventListener('error', handleError);
+        
+        if (video.srcObject) {
+          // Don't stop tracks here as they might be used elsewhere
+          video.srcObject = null;
+        }
+      };
+    } catch (err) {
+      console.error('Error setting video source:', err);
+      setVideoError(true);
+    }
+  }, [participant.stream, participant.name, isSelfView]);
 
   const getInitials = (name: string) => 
     name.split(' ').map(n => n[0]).join('').toUpperCase();
 
   const hasVideo = participant.stream?.getVideoTracks().length > 0 && !participant.isVideoOff;
+  const isScreenSharing = participant.isScreenSharing;
+
+  const tileClasses = `
+    relative aspect-video rounded-lg overflow-hidden bg-gray-800 
+    ${isLarge ? 'col-span-2 row-span-2' : ''}
+    ${className}
+  `;
 
   return (
-    <div className={`relative aspect-video rounded-lg overflow-hidden bg-gray-800 ${className}`}>
+    <div className={tileClasses}>
       {hasVideo ? (
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          className="w-full h-full object-cover"
-        />
+        <>
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            className={`w-full h-full object-cover ${videoLoaded ? 'opacity-100' : 'opacity-0'}`}
+          />
+          {!videoLoaded && !videoError && (
+            <div className="absolute inset-0 flex items-center justify-center bg-gray-700">
+              <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+            </div>
+          )}
+        </>
       ) : (
         <div className="absolute inset-0 flex items-center justify-center bg-gray-700">
           <Avatar className="h-24 w-24">
@@ -69,7 +122,8 @@ const VideoTile = ({
 
       <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/80 to-transparent text-white">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">
+          <span className="text-sm font-medium flex items-center gap-2">
+            {isScreenSharing && <MonitorSmartphone size={16} className="text-green-400" />}
             {participant.name} {isSelfView && '(You)'}
           </span>
           <div className="flex gap-2">
@@ -88,26 +142,54 @@ const VideoTile = ({
 
 const VideoGrid = () => {
   const { participants, localParticipant } = useRoom();
-
+  
+  // Check if any participant is screen sharing
+  const screenSharingParticipant = [localParticipant, ...participants].find(p => p.isScreenSharing);
+  
+  // Determine grid layout
   const getGridClass = () => {
-    const count = participants.length + 1;
+    const count = participants.length + 1; // +1 for local participant
+    
+    // If someone is sharing their screen, use a different layout
+    if (screenSharingParticipant) {
+      if (count <= 2) return 'grid-cols-1';
+      if (count <= 5) return 'grid-cols-2';
+      return 'grid-cols-3';
+    }
+    
+    // Regular video conference layout
     if (count <= 1) return 'grid-cols-1';
-    if (count === 2) return 'grid-cols-2';
+    if (count === 2) return 'grid-cols-1 md:grid-cols-2';
     if (count <= 4) return 'grid-cols-2';
     if (count <= 9) return 'grid-cols-3';
     return 'grid-cols-4';
   };
 
   return (
-    <div className={`grid ${getGridClass()} gap-4 p-4 w-full h-full`}>
-      <VideoTile 
-        participant={localParticipant} 
-        isSelfView 
-        className="border-2 border-primary"
-      />
-      {participants.map(participant => (
-        <VideoTile key={participant.id} participant={participant} />
-      ))}
+    <div className={`grid ${getGridClass()} gap-4 p-4 w-full h-full auto-rows-min`}>
+      {/* If someone is screen sharing, show them first and larger */}
+      {screenSharingParticipant && (
+        <VideoTile 
+          key={`screen-${screenSharingParticipant.id}`}
+          participant={screenSharingParticipant}
+          isSelfView={screenSharingParticipant.id === localParticipant.id}
+          isLarge={true}
+          className="col-span-full row-span-2 md:row-span-3"
+        />
+      )}
+      
+      {/* Then show all participants including local participant */}
+      {[localParticipant, ...participants]
+        // Filter out the screen sharing participant if they're already displayed
+        .filter(p => screenSharingParticipant ? p.id !== screenSharingParticipant.id : true)
+        .map(participant => (
+          <VideoTile 
+            key={participant.id} 
+            participant={participant} 
+            isSelfView={participant.id === localParticipant.id}
+            className={participant.id === localParticipant.id ? "border-2 border-primary" : ""}
+          />
+        ))}
     </div>
   );
 };
