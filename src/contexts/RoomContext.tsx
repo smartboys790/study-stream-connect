@@ -16,6 +16,14 @@ interface Participant {
   peerId?: string;
 }
 
+const DEFAULT_LOCAL_PARTICIPANT: Participant = {
+  id: 'local',
+  name: 'You',
+  isMuted: false,
+  isVideoOff: false,
+  isScreenSharing: false
+};
+
 interface ChatMessage {
   id: string;
   senderId: string;
@@ -37,6 +45,7 @@ interface RoomContextType {
   isAudioMuted: boolean;
   isVideoOff: boolean;
   isScreenSharing: boolean;
+  localParticipant: Participant;
   createRoom: () => Promise<string>;
   joinRoom: (roomId: string) => Promise<void>;
   leaveRoom: () => void;
@@ -73,11 +82,38 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   
+  const [localParticipant, setLocalParticipant] = useState<Participant>({
+    ...DEFAULT_LOCAL_PARTICIPANT,
+    id: user?.id || 'local',
+    name: user?.name || 'You'
+  });
+  
   const localStreamRef = useRef<MediaStream | null>(null);
   const screenShareStreamRef = useRef<MediaStream | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const peerRef = useRef<Peer | null>(null);
   const peerConnectionsRef = useRef<Map<string, PeerConnection>>(new Map());
+
+  useEffect(() => {
+    if (user) {
+      setLocalParticipant(prev => ({
+        ...prev,
+        id: user.id,
+        name: user.name || 'You',
+        avatar: user.avatar
+      }));
+    }
+  }, [user]);
+
+  useEffect(() => {
+    setLocalParticipant(prev => ({
+      ...prev,
+      stream: localStream,
+      isMuted: isAudioMuted,
+      isVideoOff: isVideoOff,
+      isScreenSharing: isScreenSharing
+    }));
+  }, [localStream, isAudioMuted, isVideoOff, isScreenSharing]);
 
   useEffect(() => {
     return () => {
@@ -89,10 +125,9 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       }
       
       if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
+        channelRef.current.unsubscribe();
       }
 
-      // Close all peer connections
       if (peerRef.current) {
         peerRef.current.destroy();
       }
@@ -178,34 +213,14 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       const participantName = user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`;
       const participantAvatar = user ? user.avatar : `https://avatar.vercel.sh/guest-${participantId}?size=128`;
       
-      setParticipants(prev => {
-        const isExisting = prev.some(p => p.id === participantId);
-        if (isExisting) {
-          return prev.map(p => 
-            p.id === participantId 
-              ? { 
-                  ...p, 
-                  stream, 
-                  isMuted: false, 
-                  isVideoOff: false, 
-                  isScreenSharing: false 
-                } 
-              : p
-          );
-        } else {
-          return [
-            ...prev,
-            {
-              id: participantId,
-              name: participantName,
-              avatar: participantAvatar,
-              stream,
-              isMuted: false,
-              isVideoOff: false,
-              isScreenSharing: false
-            }
-          ];
-        }
+      setLocalParticipant({
+        id: participantId,
+        name: participantName,
+        avatar: participantAvatar,
+        stream,
+        isMuted: false,
+        isVideoOff: false,
+        isScreenSharing: false
       });
       
       return stream;
@@ -227,34 +242,14 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         const participantName = user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`;
         const participantAvatar = user ? user.avatar : `https://avatar.vercel.sh/guest-${participantId}?size=128`;
         
-        setParticipants(prev => {
-          const isExisting = prev.some(p => p.id === participantId);
-          if (isExisting) {
-            return prev.map(p => 
-              p.id === participantId 
-                ? { 
-                    ...p, 
-                    stream: audioOnlyStream, 
-                    isMuted: false, 
-                    isVideoOff: true, 
-                    isScreenSharing: false 
-                  } 
-                : p
-            );
-          } else {
-            return [
-              ...prev,
-              {
-                id: participantId,
-                name: participantName,
-                avatar: participantAvatar,
-                stream: audioOnlyStream,
-                isMuted: false,
-                isVideoOff: true,
-                isScreenSharing: false
-              }
-            ];
-          }
+        setLocalParticipant({
+          id: participantId,
+          name: participantName,
+          avatar: participantAvatar,
+          stream: audioOnlyStream,
+          isMuted: false,
+          isVideoOff: true,
+          isScreenSharing: false
         });
         
         toast.info("Video camera not available. Using audio only.");
@@ -266,32 +261,13 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         const participantName = user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`;
         const participantAvatar = user ? user.avatar : `https://avatar.vercel.sh/guest-${participantId}?size=128`;
         
-        setParticipants(prev => {
-          const isExisting = prev.some(p => p.id === participantId);
-          if (isExisting) {
-            return prev.map(p => 
-              p.id === participantId 
-                ? { 
-                    ...p, 
-                    isMuted: true, 
-                    isVideoOff: true, 
-                    isScreenSharing: false 
-                  } 
-                : p
-            );
-          } else {
-            return [
-              ...prev,
-              {
-                id: participantId,
-                name: participantName,
-                avatar: participantAvatar,
-                isMuted: true,
-                isVideoOff: true,
-                isScreenSharing: false
-              }
-            ];
-          }
+        setLocalParticipant({
+          id: participantId,
+          name: participantName,
+          avatar: participantAvatar,
+          isMuted: true,
+          isVideoOff: true,
+          isScreenSharing: false
         });
         
         setIsAudioMuted(true);
@@ -488,12 +464,10 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         const newParticipants: Participant[] = [];
         const currentParticipantIds = new Set<string>();
         
-        // First collect all current participants
         participants.forEach(p => {
           currentParticipantIds.add(p.id);
         });
         
-        // Process presence state
         Object.entries(state).forEach(([key, presences]: [string, any]) => {
           presences.forEach((presence: any) => {
             if (presence.user_id && presence.user_id !== userId) {
@@ -525,7 +499,6 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
           });
         });
         
-        // Remove participants that are no longer present
         const filteredParticipants = newParticipants.filter(p => !currentParticipantIds.has(p.id));
         
         setParticipants(filteredParticipants);
@@ -771,22 +744,24 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
     
     const userId = user ? user.id : `guest-${Math.random().toString(36).substring(2, 9)}`;
     
-    setParticipants(prev => 
-      prev.map(p => 
-        p.id === userId ? { ...p, isMuted: newMuteState } : p
-      )
-    );
+    setLocalParticipant(prev => ({
+      ...prev,
+      isMuted: newMuteState
+    }));
     
-    if (roomId && channelRef.current) {
-      channelRef.current.track({
-        user_id: userId,
-        name: user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`,
-        peerId: peerRef.current?.id,
-        status: 'online',
-        media_status: {
-          audio: !newMuteState,
-          video: !isVideoOff,
-          screen: isScreenSharing
+    if (roomId && channelRef.current && typeof channelRef.current.send === 'function') {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'media_status_change',
+        payload: {
+          user_id: userId,
+          name: user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`,
+          peerId: peerRef.current?.id,
+          media_status: {
+            audio: !newMuteState,
+            video: !isVideoOff,
+            screen: isScreenSharing
+          }
         }
       });
     }
@@ -815,22 +790,24 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
     
     const userId = user ? user.id : `guest-${Math.random().toString(36).substring(2, 9)}`;
     
-    setParticipants(prev => 
-      prev.map(p => 
-        p.id === userId ? { ...p, isVideoOff: newVideoOffState } : p
-      )
-    );
+    setLocalParticipant(prev => ({
+      ...prev,
+      isVideoOff: newVideoOffState
+    }));
     
-    if (roomId && channelRef.current) {
-      channelRef.current.track({
-        user_id: userId,
-        name: user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`,
-        peerId: peerRef.current?.id,
-        status: 'online',
-        media_status: {
-          audio: !isAudioMuted,
-          video: !newVideoOffState,
-          screen: isScreenSharing
+    if (roomId && channelRef.current && typeof channelRef.current.send === 'function') {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'media_status_change',
+        payload: {
+          user_id: userId,
+          name: user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`,
+          peerId: peerRef.current?.id,
+          media_status: {
+            audio: !isAudioMuted,
+            video: !newVideoOffState,
+            screen: isScreenSharing
+          }
         }
       });
     }
@@ -881,22 +858,25 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         
         setIsScreenSharing(false);
         
-        setParticipants(prev => 
-          prev.map(p => 
-            p.id === userId ? { ...p, isScreenSharing: false } : p
-          )
-        );
+        setLocalParticipant(prev => ({
+          ...prev,
+          isScreenSharing: false,
+          stream: localStreamRef.current || undefined
+        }));
         
-        if (roomId && channelRef.current) {
-          channelRef.current.track({
-            user_id: userId,
-            name: user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`,
-            peerId: peerRef.current?.id,
-            status: 'online',
-            media_status: {
-              audio: !isAudioMuted,
-              video: !isVideoOff,
-              screen: false
+        if (roomId && channelRef.current && typeof channelRef.current.send === 'function') {
+          channelRef.current.send({
+            type: 'broadcast',
+            event: 'media_status_change',
+            payload: {
+              user_id: userId,
+              name: user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`,
+              peerId: peerRef.current?.id,
+              media_status: {
+                audio: !isAudioMuted,
+                video: !isVideoOff,
+                screen: false
+              }
             }
           });
         }
@@ -973,22 +953,25 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
             
             setIsScreenSharing(false);
             
-            setParticipants(prev => 
-              prev.map(p => 
-                p.id === userId ? { ...p, isScreenSharing: false } : p
-              )
-            );
+            setLocalParticipant(prev => ({
+              ...prev,
+              isScreenSharing: false,
+              stream: localStreamRef.current || undefined
+            }));
             
-            if (roomId && channelRef.current) {
-              channelRef.current.track({
-                user_id: userId,
-                name: user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`,
-                peerId: peerRef.current?.id,
-                status: 'online',
-                media_status: {
-                  audio: !isAudioMuted,
-                  video: !isVideoOff,
-                  screen: false
+            if (roomId && channelRef.current && typeof channelRef.current.send === 'function') {
+              channelRef.current.send({
+                type: 'broadcast',
+                event: 'media_status_change',
+                payload: {
+                  user_id: userId,
+                  name: user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`,
+                  peerId: peerRef.current?.id,
+                  media_status: {
+                    audio: !isAudioMuted,
+                    video: !isVideoOff,
+                    screen: false
+                  }
                 }
               });
             }
@@ -996,22 +979,25 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
             toast.info("Screen sharing stopped");
           };
           
-          setParticipants(prev => 
-            prev.map(p => 
-              p.id === userId ? { ...p, isScreenSharing: true } : p
-            )
-          );
+          setLocalParticipant(prev => ({
+            ...prev,
+            isScreenSharing: true,
+            stream: screenStream
+          }));
           
-          if (roomId && channelRef.current) {
-            channelRef.current.track({
-              user_id: userId,
-              name: user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`,
-              peerId: peerRef.current?.id,
-              status: 'online',
-              media_status: {
-                audio: !isAudioMuted,
-                video: !isVideoOff,
-                screen: true
+          if (roomId && channelRef.current && typeof channelRef.current.send === 'function') {
+            channelRef.current.send({
+              type: 'broadcast',
+              event: 'media_status_change',
+              payload: {
+                user_id: userId,
+                name: user ? user.name : `Guest ${Math.floor(Math.random() * 1000)}`,
+                peerId: peerRef.current?.id,
+                media_status: {
+                  audio: !isAudioMuted,
+                  video: !isVideoOff,
+                  screen: true
+                }
               }
             });
           }
@@ -1038,6 +1024,7 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         isAudioMuted,
         isVideoOff,
         isScreenSharing,
+        localParticipant,
         createRoom,
         joinRoom,
         leaveRoom,

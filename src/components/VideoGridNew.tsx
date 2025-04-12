@@ -144,11 +144,16 @@ const VideoGrid = () => {
   const { participants, localParticipant } = useRoom();
   
   // Check if any participant is screen sharing
-  const screenSharingParticipant = [localParticipant, ...participants].find(p => p.isScreenSharing);
+  // Adding null checks to prevent errors when participants or localParticipant are undefined
+  const screenSharingParticipant = 
+    participants && localParticipant ? 
+    [localParticipant, ...participants].find(p => p && p.isScreenSharing) : 
+    undefined;
   
   // Determine grid layout
   const getGridClass = () => {
-    const count = participants.length + 1; // +1 for local participant
+    // Add safe checks to handle potential undefined values
+    const count = (participants?.length || 0) + 1; // +1 for local participant
     
     // If someone is sharing their screen, use a different layout
     if (screenSharingParticipant) {
@@ -165,6 +170,15 @@ const VideoGrid = () => {
     return 'grid-cols-4';
   };
 
+  // Early return if localParticipant is not available yet
+  if (!localParticipant) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
   return (
     <div className={`grid ${getGridClass()} gap-4 p-4 w-full h-full auto-rows-min`}>
       {/* If someone is screen sharing, show them first and larger */}
@@ -179,9 +193,10 @@ const VideoGrid = () => {
       )}
       
       {/* Then show all participants including local participant */}
-      {[localParticipant, ...participants]
+      {[localParticipant, ...(participants || [])]
         // Filter out the screen sharing participant if they're already displayed
-        .filter(p => screenSharingParticipant ? p.id !== screenSharingParticipant.id : true)
+        // Also add null checks for safety
+        .filter(p => p && (screenSharingParticipant ? p.id !== screenSharingParticipant.id : true))
         .map(participant => (
           <VideoTile 
             key={participant.id} 

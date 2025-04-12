@@ -1,3 +1,4 @@
+
 import { useRef, useEffect } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useRoom } from "@/contexts/RoomContext";
@@ -6,9 +7,18 @@ import { Mic, MicOff, Video, VideoOff } from "lucide-react";
 const VideoGrid = () => {
   const { participants, localParticipant } = useRoom();
 
+  // Early return if localParticipant is not ready
+  if (!localParticipant) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
   // Zoom-style grid layout
   const getGridClass = () => {
-    const count = participants.length + 1; // +1 for local participant
+    const count = (participants?.length || 0) + 1; // +1 for local participant
     if (count <= 1) return "grid-cols-1";
     if (count === 2) return "grid-cols-2";
     if (count <= 4) return "grid-cols-2";
@@ -26,7 +36,7 @@ const VideoGrid = () => {
       />
 
       {/* Remote participants */}
-      {participants.map((participant) => (
+      {participants && participants.map((participant) => (
         <VideoTile 
           key={participant.id} 
           participant={participant}

@@ -1,3 +1,4 @@
+
 import { useRef, useEffect } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useRoom } from '@/contexts/RoomContext';
@@ -30,12 +31,14 @@ const VideoTile = ({
     video.srcObject = participant.stream;
     video.muted = isSelfView;
 
-    video.play().catch(console.error);
+    video.play().catch(err => {
+      console.error("Video play error:", err);
+    });
 
     return () => {
       if (video.srcObject) {
-        const tracks = (video.srcObject as MediaStream).getTracks();
-        tracks.forEach(track => track.stop());
+        // Only reset srcObject, don't stop tracks as they might be used elsewhere
+        video.srcObject = null;
       }
     };
   }, [participant.stream, isSelfView]);
@@ -85,20 +88,20 @@ const VideoTile = ({
 };
 
 export const ZoomVideoGrid = () => {
-  const { participants, localStream, isAudioMuted, isVideoOff } = useRoom();
+  const { participants, localParticipant } = useRoom();
 
-  // Create local participant object
-  const localParticipant = {
-    id: 'local',
-    name: 'You',
-    stream: localStream,
-    isMuted: isAudioMuted,
-    isVideoOff: isVideoOff,
-  };
+  // Early return with loading if localParticipant isn't available
+  if (!localParticipant) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
 
   // Zoom-style grid layout
   const getGridClass = () => {
-    const count = participants.length + 1; // +1 for local participant
+    const count = (participants?.length || 0) + 1; // +1 for local participant
     if (count <= 1) return 'grid-cols-1';
     if (count === 2) return 'grid-cols-2';
     if (count <= 4) return 'grid-cols-2';
@@ -113,7 +116,7 @@ export const ZoomVideoGrid = () => {
         isSelfView 
         className="border-2 border-primary"
       />
-      {participants.map(participant => (
+      {participants && participants.map(participant => (
         <VideoTile key={participant.id} participant={participant} />
       ))}
     </div>
