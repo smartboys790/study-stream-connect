@@ -1,4 +1,3 @@
-
 import { useRef, useEffect, useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useRoom } from '@/contexts/RoomContext';
@@ -143,21 +142,18 @@ const VideoTile = ({
 const VideoGrid = () => {
   const { participants, localParticipant } = useRoom();
   
-  // Check if any participant is screen sharing
-  const screenSharingParticipant = [localParticipant, ...participants].find(p => p.isScreenSharing);
+  const allParticipants = [localParticipant, ...participants].filter(Boolean);
+  const screenSharingParticipant = allParticipants.find(p => p && p.isScreenSharing);
   
-  // Determine grid layout
   const getGridClass = () => {
-    const count = participants.length + 1; // +1 for local participant
+    const count = participants.length + 1;
     
-    // If someone is sharing their screen, use a different layout
     if (screenSharingParticipant) {
       if (count <= 2) return 'grid-cols-1';
       if (count <= 5) return 'grid-cols-2';
       return 'grid-cols-3';
     }
     
-    // Regular video conference layout
     if (count <= 1) return 'grid-cols-1';
     if (count === 2) return 'grid-cols-1 md:grid-cols-2';
     if (count <= 4) return 'grid-cols-2';
@@ -167,7 +163,6 @@ const VideoGrid = () => {
 
   return (
     <div className={`grid ${getGridClass()} gap-4 p-4 w-full h-full auto-rows-min`}>
-      {/* If someone is screen sharing, show them first and larger */}
       {screenSharingParticipant && (
         <VideoTile 
           key={`screen-${screenSharingParticipant.id}`}
@@ -178,9 +173,7 @@ const VideoGrid = () => {
         />
       )}
       
-      {/* Then show all participants including local participant */}
-      {[localParticipant, ...participants]
-        // Filter out the screen sharing participant if they're already displayed
+      {allParticipants
         .filter(p => screenSharingParticipant ? p.id !== screenSharingParticipant.id : true)
         .map(participant => (
           <VideoTile 
