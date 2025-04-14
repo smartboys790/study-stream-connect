@@ -50,35 +50,77 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const login = async (email: string, password: string) => {
     try {
       setIsLoading(true);
-      // For demo purposes, we're mocking the authentication
-      // In a real app, this would make an API call to your backend
       
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // For demo purposes using Supabase Auth
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
       
-      // Demo login - in a real app, this would validate credentials against a backend
-      if (email && password) {
-        // We need to fetch the user's username from profiles table
-        const { data: profileData, error: profileError } = await supabase
+      if (error) throw error;
+      
+      // Fetch the user profile after successful login
+      const { data: userData } = await supabase.auth.getUser();
+      
+      if (!userData?.user) throw new Error("User data not found");
+      
+      // Fetch the profile data from profiles table
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userData.user.id)
+        .single();
+      
+      if (profileError) {
+        console.error("Error fetching profile:", profileError);
+        // If profile doesn't exist, create one
+        const { error: insertError } = await supabase
           .from('profiles')
-          .select('username, display_name, avatar_url')
-          .eq('id', `user-${Math.random().toString(36).substring(2, 9)}`) // This is mocked, in real implementation use the actual user ID
-          .maybeSingle();
+          .insert([
+            {
+              id: userData.user.id,
+              username: email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, ''),
+              display_name: email.split('@')[0],
+              avatar_url: `https://avatar.vercel.sh/${email}?size=128`
+            }
+          ]);
           
+        if (insertError) throw insertError;
+        
+        // Fetch the newly created profile
+        const { data: newProfile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userData.user.id)
+          .single();
+          
+        if (newProfile) {
+          const mockUser = {
+            id: userData.user.id,
+            name: newProfile.display_name || email.split('@')[0],
+            email: userData.user.email || email,
+            avatar: newProfile.avatar_url,
+            username: newProfile.username
+          };
+          
+          setUser(mockUser);
+          localStorage.setItem("studystream_user", JSON.stringify(mockUser));
+        }
+      } else if (profileData) {
+        // Profile exists, use it
         const mockUser = {
-          id: `user-${Math.random().toString(36).substring(2, 9)}`,
-          name: email.split('@')[0], // Use part of the email as the name for demo
-          email,
-          avatar: `https://avatar.vercel.sh/${email}?size=128`,
-          username: profileData?.username || email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '')
+          id: userData.user.id,
+          name: profileData.display_name || email.split('@')[0],
+          email: userData.user.email || email,
+          avatar: profileData.avatar_url,
+          username: profileData.username
         };
         
         setUser(mockUser);
         localStorage.setItem("studystream_user", JSON.stringify(mockUser));
-        toast.success("Login successful!");
-      } else {
-        toast.error("Invalid credentials!");
       }
+      
+      toast.success("Login successful!");
     } catch (error) {
       console.error("Login error:", error);
       toast.error("Failed to login. Please try again.");
@@ -90,24 +132,39 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const signup = async (name: string, email: string, password: string) => {
     try {
       setIsLoading(true);
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // Create a username from the name
-      const username = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      // Create a username from the email
+      const username = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
       
-      // Demo signup - in a real app, this would create a user account
-      const mockUser = {
-        id: `user-${Math.random().toString(36).substring(2, 9)}`,
-        name,
+      // Sign up with Supabase Auth
+      const { data, error } = await supabase.auth.signUp({
         email,
-        avatar: `https://avatar.vercel.sh/${email}?size=128`,
-        username
-      };
+        password,
+        options: {
+          data: {
+            name,
+            username,
+            avatar_url: `https://avatar.vercel.sh/${email}?size=128`
+          }
+        }
+      });
       
-      setUser(mockUser);
-      localStorage.setItem("studystream_user", JSON.stringify(mockUser));
-      toast.success("Account created successfully!");
+      if (error) throw error;
+      
+      if (data.user) {
+        // Our database trigger will create the profile
+        const mockUser = {
+          id: data.user.id,
+          name,
+          email,
+          avatar: `https://avatar.vercel.sh/${email}?size=128`,
+          username
+        };
+        
+        setUser(mockUser);
+        localStorage.setItem("studystream_user", JSON.stringify(mockUser));
+        toast.success("Account created successfully!");
+      }
     } catch (error) {
       console.error("Signup error:", error);
       toast.error("Failed to create account. Please try again.");
@@ -116,10 +173,16 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   };
 
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem("studystream_user");
-    toast.success("Logged out successfully!");
+  const logout = async () => {
+    try {
+      await supabase.auth.signOut();
+      setUser(null);
+      localStorage.removeItem("studystream_user");
+      toast.success("Logged out successfully!");
+    } catch (error) {
+      console.error("Logout error:", error);
+      toast.error("Failed to logout. Please try again.");
+    }
   };
 
   return (

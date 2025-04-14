@@ -38,8 +38,12 @@ const Signup = () => {
     try {
       await signup(name, email, password);
       navigate("/dashboard");
-    } catch (err) {
-      setError("Failed to create account. Please try again.");
+    } catch (err: any) {
+      if (err.message) {
+        setError(err.message);
+      } else {
+        setError("Failed to create account. Please try again.");
+      }
       console.error(err);
     }
   };

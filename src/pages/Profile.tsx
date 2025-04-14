@@ -60,16 +60,8 @@ const Profile = () => {
         
         // If no username provided, redirect to the current user's profile
         if (!username && isAuthenticated && user) {
-          const { data: userProfile } = await supabase
-            .from('profiles')
-            .select('username')
-            .eq('id', user.id)
-            .single();
-            
-          if (userProfile?.username) {
-            navigate(`/profile/${userProfile.username}`, { replace: true });
-            return;
-          }
+          navigate(`/profile/${user.username || user.id}`, { replace: true });
+          return;
         }
         
         if (!username) {
@@ -83,12 +75,49 @@ const Profile = () => {
           .from('profiles')
           .select('*')
           .eq('username', username)
-          .single();
+          .maybeSingle();
           
         if (profileError || !profileData) {
-          setError("Profile not found");
-          setLoading(false);
-          return;
+          // If not found by username, try by user ID (for backward compatibility)
+          const { data: profileByIdData, error: profileByIdError } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', username)
+            .maybeSingle();
+            
+          if (profileByIdError || !profileByIdData) {
+            // If current user is logged in but profile not found, create one
+            if (isAuthenticated && user && (user.username === username || user.id === username)) {
+              console.log("Creating profile for current user");
+              // Create a new profile for the current user
+              const { error: insertError, data: insertedProfile } = await supabase
+                .from('profiles')
+                .upsert({
+                  id: user.id,
+                  username: user.username || user.id,
+                  display_name: user.name,
+                  avatar_url: user.avatar,
+                  join_date: new Date().toISOString()
+                })
+                .select()
+                .single();
+                
+              if (insertError || !insertedProfile) {
+                setError("Failed to create profile. Please try again later.");
+                console.error("Profile creation error:", insertError);
+                setLoading(false);
+                return;
+              }
+              
+              profileData = insertedProfile;
+            } else {
+              setError("Profile not found");
+              setLoading(false);
+              return;
+            }
+          } else {
+            profileData = profileByIdData;
+          }
         }
         
         // Check if this is the current user's profile
@@ -99,7 +128,20 @@ const Profile = () => {
           .from('user_stats')
           .select('current_streak, best_streak, total_hours, rank, rank_position')
           .eq('profile_id', profileData.id)
-          .single();
+          .maybeSingle();
+          
+        // If no stats found, create them
+        if (!statsData && isCurrentUser) {
+          // Create user stats
+          await supabase
+            .from('user_stats')
+            .upsert({
+              profile_id: profileData.id,
+              current_streak: 0,
+              best_streak: 0,
+              total_hours: 0
+            });
+        }
           
         // Fetch follower count
         const { count: followerCount } = await supabase
@@ -121,7 +163,7 @@ const Profile = () => {
             .select('*')
             .eq('follower_id', user.id)
             .eq('following_id', profileData.id)
-            .single();
+            .maybeSingle();
             
           isFollowing = !!followData;
         }
@@ -144,7 +186,13 @@ const Profile = () => {
         
         setProfile({
           ...profileData,
-          stats: statsData || null,
+          stats: statsData || {
+            current_streak: 0,
+            best_streak: 0,
+            total_hours: 0,
+            rank: 'Beginner',
+            rank_position: null
+          },
           follower_count: followerCount || 0,
           following_count: followingCount || 0,
           is_following: isFollowing,
@@ -263,7 +311,7 @@ const Profile = () => {
             <TabsTrigger value="badges">Badges</TabsTrigger>
             <TabsTrigger value="posts">Posts</TabsTrigger>
             {isCurrentUser && (
-              <TabsTrigger value="edit">Edit Profile</TabsTrigger>
+              <TabsTrigger id="edit-tab" value="edit">Edit Profile</TabsTrigger>
             )}
           </TabsList>
           

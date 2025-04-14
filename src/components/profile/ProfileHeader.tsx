@@ -10,8 +10,7 @@ import {
   Users, 
   Camera, 
   Calendar, 
-  MapPin,
-  Upload
+  MapPin
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -63,10 +62,31 @@ const ProfileHeader = ({ profile, isCurrentUser, onFollow }: ProfileHeaderProps)
       const fileName = `${type}_${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
       const filePath = `${type}s/${user.id}/${fileName}`;
       
+      // Check if the profiles bucket exists, if not create it
+      const { data: buckets } = await supabase.storage.listBuckets();
+      const profilesBucketExists = buckets?.some(bucket => bucket.name === 'profiles');
+      
+      if (!profilesBucketExists) {
+        try {
+          // Create the profiles bucket
+          await supabase.storage.createBucket('profiles', {
+            public: true,
+            fileSizeLimit: 10485760, // 10MB
+            allowedMimeTypes: ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
+          });
+        } catch (error) {
+          console.log('Bucket might already exist:', error);
+          // Continue anyway
+        }
+      }
+      
       // Upload to storage
       const { error: uploadError } = await supabase.storage
         .from('profiles')
-        .upload(filePath, file);
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: true
+        });
         
       if (uploadError) {
         throw uploadError;
