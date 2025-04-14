@@ -9,6 +9,158 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      badges: {
+        Row: {
+          description: string | null
+          icon_url: string | null
+          id: string
+          level: number
+          name: string
+        }
+        Insert: {
+          description?: string | null
+          icon_url?: string | null
+          id?: string
+          level: number
+          name: string
+        }
+        Update: {
+          description?: string | null
+          icon_url?: string | null
+          id?: string
+          level?: number
+          name?: string
+        }
+        Relationships: []
+      }
+      followers: {
+        Row: {
+          created_at: string | null
+          follower_id: string
+          following_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          follower_id: string
+          following_id: string
+        }
+        Update: {
+          created_at?: string | null
+          follower_id?: string
+          following_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "followers_follower_id_fkey"
+            columns: ["follower_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "followers_following_id_fkey"
+            columns: ["following_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      interests: {
+        Row: {
+          id: string
+          name: string
+        }
+        Insert: {
+          id?: string
+          name: string
+        }
+        Update: {
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      posts: {
+        Row: {
+          content: string
+          created_at: string | null
+          id: string
+          profile_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          content: string
+          created_at?: string | null
+          id?: string
+          profile_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          content?: string
+          created_at?: string | null
+          id?: string
+          profile_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "posts_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          banner_url: string | null
+          bio: string | null
+          country: string | null
+          created_at: string | null
+          display_name: string | null
+          id: string
+          join_date: string | null
+          last_seen: string | null
+          pronouns: string | null
+          status: string | null
+          updated_at: string | null
+          username: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          banner_url?: string | null
+          bio?: string | null
+          country?: string | null
+          created_at?: string | null
+          display_name?: string | null
+          id: string
+          join_date?: string | null
+          last_seen?: string | null
+          pronouns?: string | null
+          status?: string | null
+          updated_at?: string | null
+          username?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          banner_url?: string | null
+          bio?: string | null
+          country?: string | null
+          created_at?: string | null
+          display_name?: string | null
+          id?: string
+          join_date?: string | null
+          last_seen?: string | null
+          pronouns?: string | null
+          status?: string | null
+          updated_at?: string | null
+          username?: string | null
+        }
+        Relationships: []
+      }
       room_participants: {
         Row: {
           id: string
@@ -67,6 +219,110 @@ export type Database = {
           scheduled_time?: string | null
         }
         Relationships: []
+      }
+      user_badges: {
+        Row: {
+          acquired_at: string | null
+          badge_id: string
+          profile_id: string
+        }
+        Insert: {
+          acquired_at?: string | null
+          badge_id: string
+          profile_id: string
+        }
+        Update: {
+          acquired_at?: string | null
+          badge_id?: string
+          profile_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_badges_badge_id_fkey"
+            columns: ["badge_id"]
+            isOneToOne: false
+            referencedRelation: "badges"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_badges_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_interests: {
+        Row: {
+          interest_id: string
+          profile_id: string
+        }
+        Insert: {
+          interest_id: string
+          profile_id: string
+        }
+        Update: {
+          interest_id?: string
+          profile_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_interests_interest_id_fkey"
+            columns: ["interest_id"]
+            isOneToOne: false
+            referencedRelation: "interests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_interests_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_stats: {
+        Row: {
+          best_streak: number | null
+          current_streak: number | null
+          freeze_count: number | null
+          profile_id: string
+          rank: string | null
+          rank_position: number | null
+          streak_started_at: string | null
+          total_hours: number | null
+        }
+        Insert: {
+          best_streak?: number | null
+          current_streak?: number | null
+          freeze_count?: number | null
+          profile_id: string
+          rank?: string | null
+          rank_position?: number | null
+          streak_started_at?: string | null
+          total_hours?: number | null
+        }
+        Update: {
+          best_streak?: number | null
+          current_streak?: number | null
+          freeze_count?: number | null
+          profile_id?: string
+          rank?: string | null
+          rank_position?: number | null
+          streak_started_at?: string | null
+          total_hours?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_stats_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {

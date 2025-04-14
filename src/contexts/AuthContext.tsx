@@ -1,12 +1,14 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 interface User {
   id: string;
   name: string;
   email: string;
   avatar?: string;
+  username?: string;
 }
 
 interface AuthContextType {
@@ -56,11 +58,19 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       
       // Demo login - in a real app, this would validate credentials against a backend
       if (email && password) {
+        // We need to fetch the user's username from profiles table
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('username, display_name, avatar_url')
+          .eq('id', `user-${Math.random().toString(36).substring(2, 9)}`) // This is mocked, in real implementation use the actual user ID
+          .maybeSingle();
+          
         const mockUser = {
           id: `user-${Math.random().toString(36).substring(2, 9)}`,
           name: email.split('@')[0], // Use part of the email as the name for demo
           email,
           avatar: `https://avatar.vercel.sh/${email}?size=128`,
+          username: profileData?.username || email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '')
         };
         
         setUser(mockUser);
@@ -83,12 +93,16 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       // Simulate API delay
       await new Promise(resolve => setTimeout(resolve, 1000));
       
+      // Create a username from the name
+      const username = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      
       // Demo signup - in a real app, this would create a user account
       const mockUser = {
         id: `user-${Math.random().toString(36).substring(2, 9)}`,
         name,
         email,
         avatar: `https://avatar.vercel.sh/${email}?size=128`,
+        username
       };
       
       setUser(mockUser);

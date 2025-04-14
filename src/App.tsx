@@ -9,6 +9,7 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Dashboard from "./pages/Dashboard";
 import Room from "./pages/Room";
+import Profile from "./pages/Profile"; // Add the Profile page import
 import NotFound from "./pages/NotFound";
 import { AuthProvider } from "./contexts/AuthContext";
 import { RoomProvider } from "./contexts/RoomContext";
@@ -29,6 +30,8 @@ const App = () => (
               <Route path="/signup" element={<Signup />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/room/:roomId" element={<Room />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="/profile/:username" element={<Profile />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </RoomProvider>
