@@ -14,6 +14,7 @@ import ProfileInterests from "@/components/profile/ProfileInterests";
 import ProfileEdit from "@/components/profile/ProfileEdit";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { v4 as uuidv4 } from 'uuid';
 
 export type ProfileWithStats = {
   id: string;
@@ -53,6 +54,22 @@ const Profile = () => {
   const [isCurrentUser, setIsCurrentUser] = useState(false);
   const [activeTab, setActiveTab] = useState("info");
 
+  // Helper function to get a valid UUID
+  const getValidUuid = (id: string): string => {
+    if (id && id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+      return id;
+    }
+    
+    // Check if we have a stored mapping
+    const idMappings = JSON.parse(localStorage.getItem('id_mappings') || '{}');
+    if (idMappings[id]) {
+      return idMappings[id];
+    }
+    
+    // Generate a new UUID if needed
+    return uuidv4();
+  };
+
   useEffect(() => {
     const fetchProfile = async () => {
       try {
@@ -79,22 +96,30 @@ const Profile = () => {
           
         if (profileError || !profileData) {
           // If not found by username, try by user ID (for backward compatibility)
+          // For user ID lookups, make sure we have a valid UUID
+          const validUserId = getValidUuid(username);
+          
+          console.log("Looking up by id:", validUserId);
+          
           const { data: profileByIdData, error: profileByIdError } = await supabase
             .from('profiles')
             .select('*')
-            .eq('id', username)
+            .eq('id', validUserId)
             .maybeSingle();
             
           if (profileByIdError || !profileByIdData) {
             // If current user is logged in but profile not found, create one
             if (isAuthenticated && user && (user.username === username || user.id === username)) {
               console.log("Creating profile for current user");
+              
+              const validUuid = getValidUuid(user.id);
+              
               // Create a new profile for the current user
               const { error: insertError, data: insertedProfile } = await supabase
                 .from('profiles')
                 .upsert({
-                  id: user.id,
-                  username: user.username || user.id,
+                  id: validUuid,
+                  username: user.username || username,
                   display_name: user.name,
                   avatar_url: user.avatar,
                   join_date: new Date().toISOString()
@@ -111,6 +136,16 @@ const Profile = () => {
               
               // Use the inserted profile instead of trying to reassign
               profileData = insertedProfile;
+              
+              // Also create user stats
+              await supabase
+                .from('user_stats')
+                .upsert({
+                  profile_id: validUuid,
+                  current_streak: 0,
+                  best_streak: 0,
+                  total_hours: 0
+                });
             } else {
               setError("Profile not found");
               setLoading(false);
@@ -160,10 +195,11 @@ const Profile = () => {
         // Check if the current user is following this profile
         let isFollowing = false;
         if (isAuthenticated && user) {
+          const validUserId = getValidUuid(user.id);
           const { data: followData } = await supabase
             .from('followers')
             .select('*')
-            .eq('follower_id', user.id)
+            .eq('follower_id', validUserId)
             .eq('following_id', profileData.id)
             .maybeSingle();
             
@@ -221,12 +257,14 @@ const Profile = () => {
     if (!profile || !user) return;
     
     try {
+      const validUserId = getValidUuid(user.id);
+      
       if (profile.is_following) {
         // Unfollow
         await supabase
           .from('followers')
           .delete()
-          .eq('follower_id', user.id)
+          .eq('follower_id', validUserId)
           .eq('following_id', profile.id);
           
         setProfile({
@@ -241,7 +279,7 @@ const Profile = () => {
         await supabase
           .from('followers')
           .insert({
-            follower_id: user.id,
+            follower_id: validUserId,
             following_id: profile.id
           });
           
@@ -299,50 +337,65 @@ const Profile = () => {
       <Header />
       
       <main className="flex-1 container max-w-6xl mx-auto px-4 py-6">
-        <ProfileHeader 
-          profile={profile} 
-          isCurrentUser={isCurrentUser} 
-          onFollow={handleFollow} 
-        />
-        
-        <Tabs defaultValue={activeTab} onValueChange={setActiveTab} className="mt-6">
-          <TabsList className="grid grid-cols-2 md:grid-cols-6 w-full">
-            <TabsTrigger value="info">Info</TabsTrigger>
-            <TabsTrigger value="stats">Stats</TabsTrigger>
-            <TabsTrigger value="interests">Interests</TabsTrigger>
-            <TabsTrigger value="badges">Badges</TabsTrigger>
-            <TabsTrigger value="posts">Posts</TabsTrigger>
-            {isCurrentUser && (
-              <TabsTrigger id="edit-tab" value="edit">Edit Profile</TabsTrigger>
-            )}
-          </TabsList>
-          
-          <TabsContent value="info" className="mt-6">
-            <ProfileInfo profile={profile} />
-          </TabsContent>
-          
-          <TabsContent value="stats" className="mt-6">
-            <ProfileStats profile={profile} />
-          </TabsContent>
-          
-          <TabsContent value="interests" className="mt-6">
-            <ProfileInterests profile={profile} isCurrentUser={isCurrentUser} onUpdate={updateProfile} />
-          </TabsContent>
-          
-          <TabsContent value="badges" className="mt-6">
-            <ProfileBadges profile={profile} />
-          </TabsContent>
-          
-          <TabsContent value="posts" className="mt-6">
-            <ProfilePosts profile={profile} />
-          </TabsContent>
-          
-          {isCurrentUser && (
-            <TabsContent value="edit" className="mt-6">
-              <ProfileEdit profile={profile} onUpdate={updateProfile} />
-            </TabsContent>
-          )}
-        </Tabs>
+        {profile ? (
+          <>
+            <ProfileHeader 
+              profile={profile} 
+              isCurrentUser={isCurrentUser} 
+              onFollow={handleFollow} 
+            />
+            
+            <Tabs defaultValue={activeTab} onValueChange={setActiveTab} className="mt-6">
+              <TabsList className="grid grid-cols-2 md:grid-cols-6 w-full">
+                <TabsTrigger value="info">Info</TabsTrigger>
+                <TabsTrigger value="stats">Stats</TabsTrigger>
+                <TabsTrigger value="interests">Interests</TabsTrigger>
+                <TabsTrigger value="badges">Badges</TabsTrigger>
+                <TabsTrigger value="posts">Posts</TabsTrigger>
+                {isCurrentUser && (
+                  <TabsTrigger id="edit-tab" value="edit">Edit Profile</TabsTrigger>
+                )}
+              </TabsList>
+              
+              <TabsContent value="info" className="mt-6">
+                <ProfileInfo profile={profile} />
+              </TabsContent>
+              
+              <TabsContent value="stats" className="mt-6">
+                <ProfileStats profile={profile} />
+              </TabsContent>
+              
+              <TabsContent value="interests" className="mt-6">
+                <ProfileInterests profile={profile} isCurrentUser={isCurrentUser} onUpdate={updateProfile} />
+              </TabsContent>
+              
+              <TabsContent value="badges" className="mt-6">
+                <ProfileBadges profile={profile} />
+              </TabsContent>
+              
+              <TabsContent value="posts" className="mt-6">
+                <ProfilePosts profile={profile} />
+              </TabsContent>
+              
+              {isCurrentUser && (
+                <TabsContent value="edit" className="mt-6">
+                  <ProfileEdit profile={profile} onUpdate={updateProfile} />
+                </TabsContent>
+              )}
+            </Tabs>
+          </>
+        ) : (
+          <div className="flex-1 flex items-center justify-center flex-col">
+            <h2 className="text-2xl font-bold mb-4">Profile Not Found</h2>
+            <p className="text-muted-foreground mb-4">{error || "The requested profile could not be found."}</p>
+            <button 
+              onClick={() => navigate("/dashboard")} 
+              className="px-4 py-2 bg-primary text-white rounded-md"
+            >
+              Go to Dashboard
+            </button>
+          </div>
+        )}
       </main>
     </div>
   );
