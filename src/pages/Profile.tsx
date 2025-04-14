@@ -14,7 +14,7 @@ import ProfileInterests from "@/components/profile/ProfileInterests";
 import ProfileEdit from "@/components/profile/ProfileEdit";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4 } from "uuid";
 
 export type ProfileWithStats = {
   id: string;
