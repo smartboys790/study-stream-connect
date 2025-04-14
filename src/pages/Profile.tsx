@@ -71,7 +71,7 @@ const Profile = () => {
         }
         
         // Fetch the profile by username
-        const { data: profileData, error: profileError } = await supabase
+        let { data: profileData, error: profileError } = await supabase
           .from('profiles')
           .select('*')
           .eq('username', username)
@@ -109,6 +109,7 @@ const Profile = () => {
                 return;
               }
               
+              // Use the inserted profile instead of trying to reassign
               profileData = insertedProfile;
             } else {
               setError("Profile not found");
@@ -116,6 +117,7 @@ const Profile = () => {
               return;
             }
           } else {
+            // Use the profile found by ID
             profileData = profileByIdData;
           }
         }
