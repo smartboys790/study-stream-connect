@@ -147,13 +147,13 @@ const VideoGrid = () => {
   // Adding null checks to prevent errors when participants or localParticipant are undefined
   const screenSharingParticipant = 
     participants && localParticipant ? 
-    [localParticipant, ...participants].find(p => p && p.isScreenSharing) : 
+    [localParticipant, ...(participants || [])].find(p => p && p.isScreenSharing) : 
     undefined;
   
   // Determine grid layout
   const getGridClass = () => {
     // Add safe checks to handle potential undefined values
-    const count = (participants?.length || 0) + 1; // +1 for local participant
+    const count = (participants?.length || 0) + (localParticipant ? 1 : 0);
     
     // If someone is sharing their screen, use a different layout
     if (screenSharingParticipant) {
@@ -198,12 +198,14 @@ const VideoGrid = () => {
         // Also add null checks for safety
         .filter(p => p && (screenSharingParticipant ? p.id !== screenSharingParticipant.id : true))
         .map(participant => (
-          <VideoTile 
-            key={participant.id} 
-            participant={participant} 
-            isSelfView={participant.id === localParticipant.id}
-            className={participant.id === localParticipant.id ? "border-2 border-primary" : ""}
-          />
+          participant && (
+            <VideoTile 
+              key={participant.id} 
+              participant={participant} 
+              isSelfView={participant.id === localParticipant.id}
+              className={participant.id === localParticipant.id ? "border-2 border-primary" : ""}
+            />
+          )
         ))}
     </div>
   );

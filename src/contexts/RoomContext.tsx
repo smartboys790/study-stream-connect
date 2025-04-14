@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -82,10 +83,12 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   
+  // Initialize localParticipant with default values
   const [localParticipant, setLocalParticipant] = useState<Participant>({
     ...DEFAULT_LOCAL_PARTICIPANT,
     id: user?.id || 'local',
-    name: user?.name || 'You'
+    name: user?.name || 'You',
+    avatar: user?.avatar
   });
   
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -156,6 +159,7 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
     if (!roomId) return;
 
     try {
+      console.log("Fetching room participants for room:", roomId);
       const { data, error } = await supabase
         .from('room_participants')
         .select(`
@@ -170,6 +174,8 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
         return;
       }
 
+      console.log("Retrieved participants:", data);
+      
       const currentParticipantIds = participants.map(p => p.id);
       const roomParticipants = data
         .filter(p => !user || p.user_id !== user.id)
@@ -188,6 +194,8 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
             isScreenSharing: false
           };
         });
+
+      console.log("Processed participants to add:", roomParticipants);
 
       if (roomParticipants.length > 0) {
         setParticipants(prev => [...prev, ...roomParticipants]);
@@ -629,7 +637,7 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       
       await fetchRoomParticipants(id);
       
-      initializePeer();
+      const peer = initializePeer();
       
       setupRealTimePresence(id);
       
@@ -646,6 +654,17 @@ export const RoomProvider = ({ children }: RoomProviderProps) => {
       ]);
       
       toast.success(`Joined room successfully!`);
+      
+      // Log room state for debugging
+      console.log("Room joined with state:", {
+        roomId: id,
+        participants,
+        localParticipant,
+        peer: peer?.id
+      });
+      
+      // After a delay, try to connect to peers that might have been missed
+      setTimeout(connectToPeers, 2000);
     } catch (error) {
       console.error("Error joining room:", error);
       toast.error("Failed to join room. Please try again.");

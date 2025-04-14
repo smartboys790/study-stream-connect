@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useRoom } from "@/contexts/RoomContext";
@@ -52,6 +53,7 @@ const Room = () => {
         }
 
         if (user) {
+          // Fix the upsert query by correctly specifying onConflict options
           const { error: participantError } = await supabase
             .from('room_participants')
             .upsert({
@@ -63,6 +65,7 @@ const Room = () => {
             });
 
           if (participantError) {
+            console.error("Error upserting participant:", participantError);
             toast.error("Failed to join room as participant");
           }
         }
@@ -72,6 +75,7 @@ const Room = () => {
           joinRoom(roomId);
         }
       } catch (err) {
+        console.error("Error checking room access:", err);
         setRoomError("Error checking room access");
       }
     };
@@ -118,6 +122,7 @@ const Room = () => {
         .eq('user_id', user.id);
 
       if (error) {
+        console.error("Error updating room status:", error);
         toast.error("Error updating room status");
       }
     }
