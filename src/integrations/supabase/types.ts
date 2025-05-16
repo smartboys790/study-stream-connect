@@ -126,6 +126,7 @@ export type Database = {
           last_seen: string | null
           pronouns: string | null
           status: string | null
+          subjects: string[] | null
           updated_at: string | null
           username: string | null
         }
@@ -141,6 +142,7 @@ export type Database = {
           last_seen?: string | null
           pronouns?: string | null
           status?: string | null
+          subjects?: string[] | null
           updated_at?: string | null
           username?: string | null
         }
@@ -156,10 +158,43 @@ export type Database = {
           last_seen?: string | null
           pronouns?: string | null
           status?: string | null
+          subjects?: string[] | null
           updated_at?: string | null
           username?: string | null
         }
         Relationships: []
+      }
+      room_messages: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          room_id: string
+          sender_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          room_id: string
+          sender_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          room_id?: string
+          sender_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "room_messages_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "rooms"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       room_participants: {
         Row: {
@@ -197,26 +232,41 @@ export type Database = {
         Row: {
           created_at: string
           created_by: string | null
+          description: string | null
           id: string
           is_public: boolean
+          max_participants: number | null
           name: string
+          password_hash: string | null
           scheduled_time: string | null
+          subject: string | null
+          type: string | null
         }
         Insert: {
           created_at?: string
           created_by?: string | null
+          description?: string | null
           id?: string
           is_public?: boolean
+          max_participants?: number | null
           name: string
+          password_hash?: string | null
           scheduled_time?: string | null
+          subject?: string | null
+          type?: string | null
         }
         Update: {
           created_at?: string
           created_by?: string | null
+          description?: string | null
           id?: string
           is_public?: boolean
+          max_participants?: number | null
           name?: string
+          password_hash?: string | null
           scheduled_time?: string | null
+          subject?: string | null
+          type?: string | null
         }
         Relationships: []
       }

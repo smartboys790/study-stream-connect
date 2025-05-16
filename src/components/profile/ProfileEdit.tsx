@@ -1,6 +1,8 @@
+import React, { useState } from "react";
+import { toast } from "sonner";
+import { ProfileWithStats } from "@/types/profile";
+import { Button } from "@/components/ui/button";
 
-import { useState } from "react";
-import { ProfileWithStats } from "@/pages/Profile";
 import { 
   Card, 
   CardContent, 
@@ -18,12 +20,10 @@ import {
   MapPin, 
   MessageSquare 
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
-import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 
 interface ProfileEditProps {

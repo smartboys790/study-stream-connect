@@ -1,13 +1,5 @@
-
-import { ProfileWithStats } from "@/pages/Profile";
-import { 
-  Card, 
-  CardContent, 
-  CardDescription, 
-  CardHeader, 
-  CardTitle 
-} from "@/components/ui/card";
-import { Flame, Award, Clock, TrendingUp, Medal } from "lucide-react";
+import React from "react";
+import { ProfileWithStats } from "@/types/profile";
 import { Progress } from "@/components/ui/progress";
 
 interface ProfileStatsProps {
