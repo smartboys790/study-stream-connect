@@ -1,6 +1,15 @@
+
 import React from "react";
 import { ProfileWithStats } from "@/types/profile";
 import { Progress } from "@/components/ui/progress";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent
+} from "@/components/ui/card";
+import { Award, Clock, Flame, Medal, TrendingUp } from "lucide-react";
 
 interface ProfileStatsProps {
   profile: ProfileWithStats;

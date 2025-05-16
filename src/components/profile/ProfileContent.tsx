@@ -15,7 +15,7 @@ interface ProfileContentProps {
   profile: ProfileWithStats;
   isCurrentUser: boolean;
   onFollow: () => void;
-  onUpdate: (updatedProfile: Partial<ProfileWithStats>) => void;
+  onUpdate: (updatedProfile: Partial<ProfileWithStats>) => Promise<void> | void; // Updated type to accept both void and Promise<void>
 }
 
 const ProfileContent = ({ 

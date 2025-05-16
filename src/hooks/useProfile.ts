@@ -243,9 +243,12 @@ export function useProfile(username: string | undefined) {
     }
   };
   
-  const updateProfile = (updatedProfile: Partial<ProfileWithStats>) => {
+  // Update this function to return Promise<void> to match the expected type in ProfileContent
+  const updateProfile = async (updatedProfile: Partial<ProfileWithStats>) => {
     if (!profile) return;
     setProfile({ ...profile, ...updatedProfile });
+    // Return a resolved promise to satisfy the Promise<void> return type
+    return Promise.resolve();
   };
 
   return {

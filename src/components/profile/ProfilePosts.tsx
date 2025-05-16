@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ProfileWithStats } from "@/types/profile";
@@ -17,7 +18,7 @@ interface Post {
 
 const ProfilePosts = ({ profile }: { profile: ProfileWithStats }) => {
   const [posts, setPosts] = useState<Post[]>([]);
-  const { user, token } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,11 +27,15 @@ const ProfilePosts = ({ profile }: { profile: ProfileWithStats }) => {
       setLoading(true);
       setError(null);
       try {
+        // Using localStorage to get the token since it's not in the AuthContext
+        const storedUser = localStorage.getItem("studystream_user");
+        const token = storedUser ? JSON.parse(storedUser).token : null;
+        
         const response = await fetch(
           `${process.env.NEXT_PUBLIC_API_URL}/posts/profile/${profile.id}`,
           {
             headers: {
-              Authorization: `Bearer ${token}`,
+              Authorization: token ? `Bearer ${token}` : '',
             },
           }
         );
@@ -52,16 +57,20 @@ const ProfilePosts = ({ profile }: { profile: ProfileWithStats }) => {
     };
 
     fetchPosts();
-  }, [profile.id, token]);
+  }, [profile.id]);
 
   const handleLike = async (postId: string) => {
     try {
+      // Using localStorage to get the token since it's not in the AuthContext
+      const storedUser = localStorage.getItem("studystream_user");
+      const token = storedUser ? JSON.parse(storedUser).token : null;
+      
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL}/posts/${postId}/like`,
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${token}`,
+            Authorization: token ? `Bearer ${token}` : '',
             "Content-Type": "application/json",
           },
         }
